@@ -1,0 +1,374 @@
+// Command spike-devid is a throwaway P1 provisioning tool for the incusos-spire
+// spike. It creates a TPM-resident DevID signing key whose exported blobs are
+// byte-compatible with the SPIRE 1.15.2 tpm_devid agent plugin, and verifies
+// that those blobs reload under a freshly recreated storage root key.
+//
+// It is deliberately disposable: no persistent TPM objects, no NV writes, and no
+// key material outside the encrypted spike volume.
+package main
+
+import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
+)
+
+// devicePath is the TPM resource manager device passed into the container.
+const devicePath = "/dev/tpmrm0"
+
+// srkAuthSize is the byte length of the random storage-root-key auth value.
+// SPIRE generates a fresh 32-byte value on every attestation session, so the
+// DevID blobs must not depend on the value used at provisioning time.
+const srkAuthSize = 32
+
+// srkTemplateHighRSA mirrors SPIRE's tpmutil.SRKTemplateHighRSA: the TCG H-1
+// high-range storage root key template with an empty unique field.
+func srkTemplateHighRSA() tpm2.Public {
+	return tpm2.Public{
+		Type:       tpm2.AlgRSA,
+		NameAlg:    tpm2.AlgSHA256,
+		Attributes: tpm2.FlagStorageDefault | tpm2.FlagNoDA,
+		RSAParameters: &tpm2.RSAParams{
+			Symmetric: &tpm2.SymScheme{
+				Alg:     tpm2.AlgAES,
+				KeyBits: 128,
+				Mode:    tpm2.AlgCFB,
+			},
+			KeyBits:    2048,
+			ModulusRaw: []byte{},
+		},
+	}
+}
+
+// devIDTemplateRSA is the DevID signing key template. It is an unrestricted
+// RSA-2048 RSASSA-SHA256 signing key fixed to this TPM and this parent, so the
+// private key can never be exported or migrated.
+func devIDTemplateRSA() tpm2.Public {
+	return tpm2.Public{
+		Type:    tpm2.AlgRSA,
+		NameAlg: tpm2.AlgSHA256,
+		Attributes: tpm2.FlagFixedTPM |
+			tpm2.FlagFixedParent |
+			tpm2.FlagSensitiveDataOrigin |
+			tpm2.FlagUserWithAuth |
+			tpm2.FlagSign,
+		RSAParameters: &tpm2.RSAParams{
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgRSASSA,
+				Hash: tpm2.AlgSHA256,
+			},
+			KeyBits: 2048,
+		},
+	}
+}
+
+// tpmSigner adapts a loaded TPM signing key to crypto.Signer so the standard
+// library can build a certificate request against a non-exportable key.
+type tpmSigner struct {
+	rw     io.ReadWriter
+	handle tpmutil.Handle
+	public crypto.PublicKey
+}
+
+// Public returns the signing key's public half.
+func (s *tpmSigner) Public() crypto.PublicKey { return s.public }
+
+// Sign signs an externally computed digest with the TPM-resident key.
+func (s *tpmSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	if opts.HashFunc() != crypto.SHA256 {
+		return nil, fmt.Errorf("unsupported hash %v", opts.HashFunc())
+	}
+
+	sig, err := tpm2.Sign(s.rw, s.handle, "", digest, nil, &tpm2.SigScheme{
+		Alg:  tpm2.AlgRSASSA,
+		Hash: tpm2.AlgSHA256,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("tpm2.Sign failed: %w", err)
+	}
+	if sig.RSA == nil {
+		return nil, errors.New("tpm returned a non-RSA signature")
+	}
+
+	return sig.RSA.Signature, nil
+}
+
+// randomAuth returns a fresh random auth value.
+func randomAuth() (string, error) {
+	buf := make([]byte, srkAuthSize)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return string(buf), nil
+}
+
+// createSRK recreates the storage root key under the owner hierarchy exactly as
+// SPIRE does at attestation time.
+func createSRK(rw io.ReadWriter, auth string) (tpmutil.Handle, []byte, error) {
+	handle, pub, _, _, _, _, err := tpm2.CreatePrimaryEx(
+		rw,
+		tpm2.HandleOwner,
+		tpm2.PCRSelection{},
+		"", // owner hierarchy password: unset on this TPM
+		auth,
+		srkTemplateHighRSA(),
+	)
+	if err != nil {
+		return 0, nil, fmt.Errorf("tpm2.CreatePrimaryEx failed: %w", err)
+	}
+	return handle, pub, nil
+}
+
+// digestHex returns the hex-encoded SHA-256 digest of b.
+func digestHex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// rsaPublicFromBlob decodes a SPIRE-format DevID public blob.
+func rsaPublicFromBlob(pubBlob []byte) (*rsa.PublicKey, error) {
+	decoded, err := tpm2.DecodePublic(pubBlob)
+	if err != nil {
+		return nil, fmt.Errorf("tpm2.DecodePublic failed: %w", err)
+	}
+	if decoded.Attributes&tpm2.FlagSign == 0 {
+		return nil, errors.New("decoded public area is not a signing key")
+	}
+
+	key, err := decoded.Key()
+	if err != nil {
+		return nil, fmt.Errorf("cannot extract public key: %w", err)
+	}
+
+	rsaKey, ok := key.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("unexpected public key type %T", key)
+	}
+	return rsaKey, nil
+}
+
+// provision creates the DevID key, writes the blob pair, and emits a CSR.
+func provision(rw io.ReadWriter, stateDir, commonName string) error {
+	srkAuth, err := randomAuth()
+	if err != nil {
+		return err
+	}
+
+	srk, srkPub, err := createSRK(rw, srkAuth)
+	if err != nil {
+		return err
+	}
+	defer tpm2.FlushContext(rw, srk)
+
+	privBlob, pubBlob, _, _, _, err := tpm2.CreateKey(
+		rw,
+		srk,
+		tpm2.PCRSelection{},
+		srkAuth,
+		"", // DevID key password: empty, matching devid_password = ""
+		devIDTemplateRSA(),
+	)
+	if err != nil {
+		return fmt.Errorf("tpm2.CreateKey failed: %w", err)
+	}
+
+	if err := os.WriteFile(stateDir+"/devid.pub.blob", pubBlob, 0o600); err != nil {
+		return err
+	}
+	if err := os.WriteFile(stateDir+"/devid.priv.blob", privBlob, 0o600); err != nil {
+		return err
+	}
+
+	devID, _, err := tpm2.Load(rw, srk, srkAuth, pubBlob, privBlob)
+	if err != nil {
+		return fmt.Errorf("tpm2.Load failed: %w", err)
+	}
+	defer tpm2.FlushContext(rw, devID)
+
+	rsaPub, err := rsaPublicFromBlob(pubBlob)
+	if err != nil {
+		return err
+	}
+
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject: pkix.Name{
+			Organization: []string{"incusos-spire spike"},
+			CommonName:   commonName,
+		},
+		SignatureAlgorithm: x509.SHA256WithRSA,
+	}, &tpmSigner{rw: rw, handle: devID, public: rsaPub})
+	if err != nil {
+		return fmt.Errorf("cannot create CSR: %w", err)
+	}
+
+	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
+	if err := os.WriteFile(stateDir+"/devid.csr", csrPEM, 0o600); err != nil {
+		return err
+	}
+
+	pubDER, err := x509.MarshalPKIXPublicKey(rsaPub)
+	if err != nil {
+		return err
+	}
+
+	return emit(map[string]any{
+		"step":                    "provision",
+		"common_name":             commonName,
+		"srk_template":            "SRKTemplateHighRSA (TCG H-1, empty unique)",
+		"srk_public_sha256":       digestHex(srkPub),
+		"devid_template":          "RSA-2048 RSASSA-SHA256, fixedTPM|fixedParent|sensitiveDataOrigin|userWithAuth|sign",
+		"devid_pub_blob_bytes":    len(pubBlob),
+		"devid_priv_blob_bytes":   len(privBlob),
+		"devid_pub_blob_sha256":   digestHex(pubBlob),
+		"devid_priv_blob_sha256":  digestHex(privBlob),
+		"devid_public_key_sha256": digestHex(pubDER),
+		"devid_key_password":      "empty",
+		"persistent_objects_made": 0,
+		"nv_writes_made":          0,
+	})
+}
+
+// selfcheck reloads the DevID blobs under a freshly created storage root key and
+// signs a nonce through SPIRE's exact signing path.
+func selfcheck(rw io.ReadWriter, stateDir string) error {
+	pubBlob, err := os.ReadFile(stateDir + "/devid.pub.blob")
+	if err != nil {
+		return err
+	}
+	privBlob, err := os.ReadFile(stateDir + "/devid.priv.blob")
+	if err != nil {
+		return err
+	}
+	certPEM, err := os.ReadFile(stateDir + "/devid.pem")
+	if err != nil {
+		return err
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return errors.New("cannot decode devid.pem")
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("cannot parse devid.pem: %w", err)
+	}
+
+	// A different random auth value proves the blobs do not depend on the
+	// provisioning-time storage root key password.
+	srkAuth, err := randomAuth()
+	if err != nil {
+		return err
+	}
+
+	srk, _, err := createSRK(rw, srkAuth)
+	if err != nil {
+		return err
+	}
+	defer tpm2.FlushContext(rw, srk)
+
+	devID, _, err := tpm2.Load(rw, srk, srkAuth, pubBlob, privBlob)
+	if err != nil {
+		return fmt.Errorf("tpm2.Load failed: %w", err)
+	}
+	defer tpm2.FlushContext(rw, devID)
+
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return err
+	}
+
+	// SPIRE hashes the nonce inside the TPM and signs with the returned ticket.
+	digest, ticket, err := tpm2.Hash(rw, tpm2.AlgSHA256, nonce, tpm2.HandlePlatform)
+	if err != nil {
+		return fmt.Errorf("tpm2.Hash failed: %w", err)
+	}
+
+	sig, err := tpm2.Sign(rw, devID, "", digest, ticket, nil)
+	if err != nil {
+		return fmt.Errorf("tpm2.Sign failed: %w", err)
+	}
+	if sig.RSA == nil {
+		return errors.New("tpm returned a non-RSA signature")
+	}
+
+	certPub, ok := cert.PublicKey.(*rsa.PublicKey)
+	if !ok {
+		return fmt.Errorf("unexpected certificate key type %T", cert.PublicKey)
+	}
+
+	sum := sha256.Sum256(nonce)
+	if err := rsa.VerifyPKCS1v15(certPub, crypto.SHA256, sum[:], sig.RSA.Signature); err != nil {
+		return fmt.Errorf("signature does not verify against devid.pem: %w", err)
+	}
+
+	blobPub, err := rsaPublicFromBlob(pubBlob)
+	if err != nil {
+		return err
+	}
+	if !blobPub.Equal(certPub) {
+		return errors.New("devid.pem public key does not match the DevID public blob")
+	}
+
+	return emit(map[string]any{
+		"step":                     "selfcheck",
+		"srk_recreated_with":       "fresh random auth value",
+		"blob_load":                "ok",
+		"tpm_hash_and_sign":        "ok",
+		"signature_verifies":       true,
+		"cert_matches_public_blob": true,
+		"certificate_subject":      cert.Subject.String(),
+		"certificate_issuer":       cert.Issuer.String(),
+	})
+}
+
+// emit prints a machine-readable result record.
+func emit(result map[string]any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(result)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: spike-devid provision|selfcheck")
+		os.Exit(2)
+	}
+
+	rwc, err := tpm2.OpenTPM(devicePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot open %s: %v\n", devicePath, err)
+		os.Exit(1)
+	}
+	defer rwc.Close()
+
+	switch os.Args[1] {
+	case "provision":
+		commonName := "spike-host-devid"
+		if len(os.Args) > 2 {
+			commonName = os.Args[2]
+		}
+		err = provision(rwc, "/state", commonName)
+	case "selfcheck":
+		err = selfcheck(rwc, "/state")
+	default:
+		err = fmt.Errorf("unknown command %q", os.Args[1])
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}

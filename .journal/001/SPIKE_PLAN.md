@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** P0 executed; G0 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`evidence/p0/EVIDENCE.md`](evidence/p0/EVIDENCE.md)
+**Session:** 001 · **Status:** P0 passed (G0) · P1 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`evidence/p0/EVIDENCE.md`](evidence/p0/EVIDENCE.md), [`evidence/p1/EVIDENCE.md`](evidence/p1/EVIDENCE.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -389,6 +389,14 @@ Ordered teardown classes (P11 executes top to bottom):
 7. Final reboot + invariant check + baseline diff (P11 acceptance).
 
 Retention exception: nothing is retained unless the go/no-go record explicitly lists it.
+
+Recorded objects (append at creation time):
+
+| Class | Object | Created in | Notes |
+|---|---|---|---|
+| 3 | Incus volume `local/spike-spire-agent-state` | P1 | Holds the DevID blob triplet; consumed by P3 |
+| 4 | Incus volume `local/spike-ca-state` | P1 | Spike root and DevID issuing CA keys; needed by P3 negative case (b) |
+| 6 | TPM objects | P1 | **None created.** H4 held; P11 diff must stay empty |
 
 ## Appendix F — Primary References
 

@@ -1,0 +1,40 @@
+#!/bin/bash
+# Throwaway two-tier spike CA for P1 DevID issuance. Destroyed at P11 teardown.
+set -euo pipefail
+
+umask 077
+mkdir -p /ca/root /ca/devid-ca
+cd /ca
+
+# Spike root CA: self-signed, 10-year, disposable.
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+  -keyout root/spike-root-ca.key \
+  -out root/spike-root-ca.pem \
+  -subj '/O=incusos-spire spike/CN=spike root CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:1' \
+  -addext 'keyUsage=critical,digitalSignature,cRLSign,keyCertSign'
+
+# Spike DevID issuing CA: signed by the spike root.
+openssl req -new -newkey rsa:2048 -sha256 -nodes \
+  -keyout devid-ca/spike-devid-ca.key \
+  -out devid-ca/spike-devid-ca.csr \
+  -subj '/O=incusos-spire spike/CN=spike DevID issuing CA'
+
+cat > devid-ca/ca.ext <<'EOF'
+basicConstraints=critical,CA:TRUE,pathlen:0
+keyUsage=critical,digitalSignature,cRLSign,keyCertSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+EOF
+
+openssl x509 -req -in devid-ca/spike-devid-ca.csr \
+  -CA root/spike-root-ca.pem -CAkey root/spike-root-ca.key \
+  -CAcreateserial -days 3650 -sha256 \
+  -extfile devid-ca/ca.ext \
+  -out devid-ca/spike-devid-ca.pem
+
+# Public bundles consumed later: server devid_ca_path (root) and agent chain material.
+cp root/spike-root-ca.pem /ca/spike-devid-root-bundle.pem
+cat devid-ca/spike-devid-ca.pem root/spike-root-ca.pem > /ca/spike-devid-ca-chain.pem
+
+openssl verify -CAfile root/spike-root-ca.pem devid-ca/spike-devid-ca.pem

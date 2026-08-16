@@ -50,3 +50,6 @@ The operator confirmed that the current IncusOS system and `local` pool recovery
 
 ## 2026-08-16 08:07 — TPM counter recovered to 2/10
 Rechecked the physical TPM with two consecutive read-only `tpm2_getcap properties-variable` calls. Both reported a dictionary-attack counter of `2/10`, down naturally from `8/10`, with `inLockout=false`. No authentication or TPM mutation command ran. Deleted the temporary inspection container and confirmed the IncusOS workload list is empty. G0 remains closed until two consecutive reads report zero.
+
+## 2026-08-16 14:37 — G0 passed
+Two consecutive read-only `tpm2_getcap properties-variable` calls report a dictionary-attack counter of `0/10` with `inLockout=false`. The counter recovered naturally from `8` → `2` → `0`; no `tpm2_clear`, hierarchy reset, or dictionary-attack reset ever ran. Persistent-handle and NV-index counts still match the P0 baseline, the temporary inspection container is deleted, the workload list is empty, and Secure Boot, TPM health, trust state, TPM-unlocked volumes, and all four Secure Boot fingerprints are unchanged. With recovery material stored in 1Password, both G0 conditions are satisfied: P1 (spike PKI and LDevID provisioning) and P2 (SPIRE Server deployment) are unblocked. P2 has no TPM dependency and may run in parallel with P1.

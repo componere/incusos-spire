@@ -2,7 +2,7 @@
 
 **Captured:** 2026-08-15 20:53 PDT  
 **Host:** `ovh-incusos` (`147.135.105.83:8443`)  
-**Decision:** **NO-GO at G0. Do not perform TPM mutation or start P1/P2.**
+**Decision:** **GO at G0 as of 2026-08-16 14:37 PDT. P1 and P2 may start.**
 
 ## Scope
 
@@ -17,14 +17,12 @@ The temporary container was deleted. The host workload list is empty again.
 | Recovery material stored outside repositories | PASS | On 2026-08-15, the operator confirmed the current IncusOS system and `local` pool recovery material was saved in 1Password. No value was provided in chat or written to the repository. |
 | IncusOS Secure Boot and TPM health | PASS | `secure_boot_enabled=true`; `tpm_status=ok`. |
 | IncusOS system trust and encrypted-volume unlock | PASS | `system_state_is_trusted=true`; root and swap are `unlocked (TPM)`. |
-| TPM hierarchy and dictionary-attack state | **FAIL** | `ownerAuthSet=0`, `endorsementAuthSet=0`, `lockoutAuthSet=0`, `inLockout=0`, but the latest `TPM2_PT_LOCKOUT_COUNTER=2` with `TPM2_PT_MAX_AUTH_FAIL=10`. P0 requires a zero counter. |
+| TPM hierarchy and dictionary-attack state | PASS | `ownerAuthSet=0`, `endorsementAuthSet=0`, `lockoutAuthSet=0`, `inLockout=0`, and two consecutive reads report `TPM2_PT_LOCKOUT_COUNTER=0` with `TPM2_PT_MAX_AUTH_FAIL=10`. |
 | TPM persistent and NV namespaces inventoried | PASS | One persistent object and two TCG EK certificate indices found; all are protected from spike use. |
 | Endorsement certificate chain discoverable | PASS | RSA and ECC EK certificates both validate directly to the official Nuvoton TPM Root CA 1110. |
 | Cleanup and unchanged host security state | PASS | Inspection container deleted; empty workload list; final IncusOS security state matches the initial state. |
 
-One blocker keeps G0 closed:
-
-1. The physical TPM dictionary-attack counter remains `2/10`. No attempt was made to clear or reset it.
+No blocker remains. Both original blockers cleared: recovery material is stored in 1Password, and the dictionary-attack counter recovered to zero without any TPM reset.
 
 ## Recovery readiness
 
@@ -257,6 +255,16 @@ The EK indices are `NO_DA`, owner auth is unset, and each certificate was read o
 - The temporary inspection container was deleted and the host workload list returned to empty.
 - G0 remains **NO-GO** until two consecutive reads report a zero counter.
 
+## G0 recheck — 2026-08-16 14:37 PDT
+
+- Two consecutive read-only `tpm2_getcap properties-variable` calls reported `TPM2_PT_LOCKOUT_COUNTER=0x0`.
+- `TPM2_PT_MAX_AUTH_FAIL` remained `0xA`; `inLockout` remained false.
+- The counter recovered naturally from `8` → `2` → `0`. No `tpm2_clear`, hierarchy reset, or dictionary-attack reset command ever ran.
+- Namespace inventory is unchanged: `TPM2_PT_HR_PERSISTENT=0x1` and `TPM2_PT_HR_NV_INDEX=0x2`, matching the P0 baseline.
+- The temporary inspection container was deleted; the host workload list returned to empty.
+- Final host security state matches the P0 baseline: Secure Boot enabled, `tpm_status=ok`, fully trusted system state, root and swap `unlocked (TPM)`, and all four Secure Boot certificate fingerprints identical.
+- **G0 passes.** P1 (spike PKI and LDevID provisioning) and P2 (SPIRE Server deployment) are unblocked.
+
 ## Cleanup
 
 - Deleted `spike-tpm-inspect` and its temporary certificate files.
@@ -264,11 +272,13 @@ The EK indices are `NO_DA`, owner auth is unset, and each certificate was read o
 - Confirmed final Secure Boot, TPM health, trust, encrypted-volume unlock, recovery-key-retrieved flag, and Secure Boot certificate fingerprints match the initial baseline.
 - No host reboot was needed because no TPM or boot-policy mutation occurred.
 
-## Safe continuation condition
+## Continuation state
 
-The recovery-storage condition is satisfied. Do not run P1, P2, or any TPM-authorized/mutating experiment until:
+Both G0 conditions are satisfied: recovery material is stored outside every repository, and the dictionary-attack counter is zero across two consecutive reads.
 
-1. A read-only `tpm2_getcap properties-variable` reports `TPM2_PT_LOCKOUT_COUNTER: 0x0`.
-2. A second read confirms that the zero counter is stable.
+TPM safety invariants still apply to every later phase:
 
-Investigate or allow normal TPM recovery without clearing or resetting the TPM.
+1. Never run `tpm2_clear`, a hierarchy reset, or a dictionary-attack reset; IncusOS disk unlock depends on this TPM.
+2. Re-inventory persistent handles and NV indices immediately before any allocation, and allocate only inside the reserved spike ranges.
+3. Record the exact creation and deletion command for every TPM object before creating it.
+4. Re-read the dictionary-attack counter after any authenticated TPM operation; a climbing counter is a stop condition.

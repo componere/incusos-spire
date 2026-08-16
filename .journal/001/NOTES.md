@@ -32,3 +32,6 @@ Current Parallels Desktop 26 documentation supports EFI/Secure Boot controls and
 
 ## 2026-08-15 20:09 — OVH bare metal selected for the full spike
 Reviewed `~/code/ovh/docs/docs/runbooks/incusos-bare-metal.md` and checked the live `ovh-incusos` remote. The idle x86_64 host has 16 CPU threads, roughly 66 GiB RAM, a physical TPM 2.0 with `tpm_status: ok`, IncusOS Secure Boot keys enrolled, a fully trusted system state, TPM-unlocked root/swap, ZFS `local`, NAT `incusbr0`, and Incus virtual-machine API support. Use it for the end-to-end SPIRE spike, including physical `tpm_devid` work and guest VMs. Treat TPM provisioning as a controlled operation: save recovery material first, allocate explicit non-conflicting persistent/NV handles, and never clear or reset TPM hierarchies because IncusOS disk unlock depends on the same TPM.
+
+## 2026-08-15 20:10 — OVH KVM verified
+Created and started an empty x86_64 Incus VM on `ovh-incusos`; it reached `RUNNING` with a QEMU PID, TAP interface, and 105 MiB current memory. Deleted the capability-check VM and confirmed the remote returned to an empty workload list. This closes the Mac lab's `/dev/kvm` gap without leaving a guest image or instance behind.

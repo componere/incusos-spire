@@ -14,7 +14,7 @@ The temporary container was deleted. The host workload list is empty again.
 
 | Check | Result | Evidence |
 |---|---|---|
-| Recovery material stored outside repositories | **BLOCKED** | IncusOS reports recovery keys retrieved, but no matching metadata-only record was found in the unlocked Bitwarden vault. Retrieval from an offline record is unconfirmed. |
+| Recovery material stored outside repositories | PASS | On 2026-08-15, the operator confirmed the current IncusOS system and `local` pool recovery material was saved in 1Password. No value was provided in chat or written to the repository. |
 | IncusOS Secure Boot and TPM health | PASS | `secure_boot_enabled=true`; `tpm_status=ok`. |
 | IncusOS system trust and encrypted-volume unlock | PASS | `system_state_is_trusted=true`; root and swap are `unlocked (TPM)`. |
 | TPM hierarchy and dictionary-attack state | **FAIL** | `ownerAuthSet=0`, `endorsementAuthSet=0`, `lockoutAuthSet=0`, `inLockout=0`, but `TPM2_PT_LOCKOUT_COUNTER=8` with `TPM2_PT_MAX_AUTH_FAIL=10`. P0 requires a zero counter. |
@@ -22,10 +22,9 @@ The temporary container was deleted. The host workload list is empty again.
 | Endorsement certificate chain discoverable | PASS | RSA and ECC EK certificates both validate directly to the official Nuvoton TPM Root CA 1110. |
 | Cleanup and unchanged host security state | PASS | Inspection container deleted; empty workload list; final IncusOS security state matches the initial state. |
 
-Two independent blockers keep G0 closed:
+One blocker keeps G0 closed:
 
-1. Recovery material exists according to IncusOS, but its offline storage and retrievability have not been confirmed.
-2. The physical TPM dictionary-attack counter is already `8/10`. No attempt was made to clear or reset it.
+1. The physical TPM dictionary-attack counter remains `8/10`. No attempt was made to clear or reset it.
 
 ## Recovery readiness
 
@@ -242,6 +241,14 @@ tpm2_nvread -C o 0x01C0000A -o /tmp/ek-ecc.der
 
 The EK indices are `NO_DA`, owner auth is unset, and each certificate was read once without retry. The counter remained unchanged.
 
+## G0 recheck — 2026-08-15 21:10 PDT
+
+- The operator confirmed the current system and `local` pool recovery material was saved in 1Password.
+- A new temporary `spike-tpm-lockout-check` container ran only `tpm2_getcap properties-variable`.
+- `TPM2_PT_LOCKOUT_COUNTER` remained `0x8`; `TPM2_PT_MAX_AUTH_FAIL` remained `0xA`; `inLockout` remained false.
+- The temporary container was deleted and the host workload list returned to empty.
+- Recovery readiness now passes. G0 remains **NO-GO** solely because the dictionary-attack counter is nonzero.
+
 ## Cleanup
 
 - Deleted `spike-tpm-inspect` and its temporary certificate files.
@@ -251,7 +258,9 @@ The EK indices are `NO_DA`, owner auth is unset, and each certificate was read o
 
 ## Safe continuation condition
 
-Do not run P1, P2, or any TPM-authorized/mutating experiment until both conditions are true:
+The recovery-storage condition is satisfied. Do not run P1, P2, or any TPM-authorized/mutating experiment until:
 
-1. The operator confirms the IncusOS system and pool recovery material is stored and retrievable outside all repositories; record only that confirmation, never the key.
-2. A read-only `tpm2_getcap properties-variable` reports `TPM2_PT_LOCKOUT_COUNTER: 0x0`; investigate or allow recovery without clearing/resetting the TPM, then confirm the counter is stable across a second read.
+1. A read-only `tpm2_getcap properties-variable` reports `TPM2_PT_LOCKOUT_COUNTER: 0x0`.
+2. A second read confirms that the zero counter is stable.
+
+Investigate or allow normal TPM recovery without clearing or resetting the TPM.

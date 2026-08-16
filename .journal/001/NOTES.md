@@ -44,3 +44,6 @@ Ran the P0 recovery-readiness and physical-TPM inventory on `ovh-incusos` throug
 
 ## 2026-08-15 21:03 — Recovery-key exposure record corrected
 Correction to the P0 evidence: the initial unfiltered `incus admin os system security show` tool call emitted the current system and `local` pool recovery-key values into the harness transcript. They were not written to repository or journal files, but must be treated as exposed to session logs. IncusOS still returns both values. The safe capture path is to filter only those fields directly into the macOS clipboard, paste the JSON into a Bitwarden Secure Note, clear the clipboard, and prove the item survives a vault lock/unlock cycle. Do not rotate keys while G0 remains closed; first preserve the current recovery path and resolve the TPM dictionary-attack counter.
+
+## 2026-08-15 21:10 — Recovery readiness passed; TPM counter still blocks G0
+The operator confirmed that the current IncusOS system and `local` pool recovery material is saved in 1Password; no value was sent through chat or written to the repository. Recreated a temporary TPM inspection container and ran only `tpm2_getcap properties-variable`. The dictionary-attack counter remains `8/10` with `inLockout=false`, so G0 remains closed. Deleted the temporary container and confirmed the IncusOS workload list is empty.

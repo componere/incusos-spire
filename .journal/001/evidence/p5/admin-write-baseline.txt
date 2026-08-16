@@ -1,0 +1,7 @@
+++ incus config set ovh-incusos:spike-authz-probe user.spiffe-bootstrap=probe-token-abc --project spike-spiffe
+++ incus config get ovh-incusos:spike-authz-probe user.spiffe-bootstrap --project spike-spiffe
+probe-token-abc
+++ incus config unset ovh-incusos:spike-authz-probe user.spiffe-bootstrap --project spike-spiffe
+++ incus config get ovh-incusos:spike-authz-probe user.spiffe-bootstrap --project spike-spiffe
+
+++ set +x

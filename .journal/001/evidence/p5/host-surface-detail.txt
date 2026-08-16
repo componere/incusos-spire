@@ -1,0 +1,61 @@
+### H2 /1.0/resources (host hardware) -- as spike-attestor-ro
+{
+  "cpu_sockets": 1,
+  "cpu_model": "AMD Ryzen 7 3800X 8-Core Processor",
+  "total_cores": 16,
+  "memory_total_GiB": 66,
+  "disks": [
+    {
+      "id": "nvme0n1",
+      "model": "SAMSUNG MZQLB960HAJR-00007",
+      "size": 960197124096
+    },
+    {
+      "id": "nvme1n1",
+      "model": "SAMSUNG MZQLB960HAJR-00007",
+      "size": 960197124096
+    },
+    {
+      "id": "sr0",
+      "model": "Virtual CDROM0",
+      "size": 0
+    }
+  ],
+  "nics": [
+    "_pd05099d46092",
+    "enp1s0f1",
+    "enx5ae399ddbc89"
+  ]
+}
+
+### H5 /1.0/certificates -- as spike-attestor-ro
+[
+	"/1.0/certificates/6ebaf5eb4cc9e003acb6a98ef7cdd24b1d2d7a00ef59f5fb9b654e3fa634db80",
+	"/1.0/certificates/84f4f0407099db24b6b1d5b4d8fb1ca4362ad49644a649198c2dfef5228cbc7d",
+	"/1.0/certificates/afd4f608e0f0e8aabce5e42a6dba33ca7ff3b76defad3f0e287f46c5136d9d84"
+]
+
+
+### H3 /1.0/storage-pools -- as spike-attestor-ro
+[
+	"/1.0/storage-pools/local"
+]
+
+
+### H1 server env leak -- as spike-attestor-ro
+{
+  "server_version": "7.3",
+  "kernel_version": "7.1.8-zabbly+",
+  "os_name": "IncusOS",
+  "server_name": "ns1001912.ip-147-135-105.us",
+  "storage": "zfs",
+  "addresses": [
+    "147.135.105.83:8443",
+    "10.55.156.1:8443",
+    "[fd42:eb1e:5a09:f8d2::1]:8443"
+  ]
+}
+
+### H4/H6/H7/H8 denial text
+$ incus query ovh:/1.0/cluster/members
+Error: Server is not clustered

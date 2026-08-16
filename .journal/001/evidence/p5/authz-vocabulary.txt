@@ -1,0 +1,71 @@
+# Live authorization vocabulary, Incus 7.3 (ovh-incusos)
+# Harvested by loading scriptlet-discovery.star (log every call, allow read-shaped
+# entitlements only) and running the full matrix as spike-attestor-ro, then reading
+# `incus monitor ovh-incusos: --type=logging --pretty`.
+
+## authorize() signature, from the server's own validation error
+$ incus config set ovh-incusos: authorization.scriptlet="# empty"
+Error: cannot set 'authorization.scriptlet' to '# empty': the function "authorize" is required but has not been found in the scriptlet
+
+$ printf 'def authorize(a):\n    return True\n' | incus config set ovh-incusos: authorization.scriptlet -
+Error: cannot set 'authorization.scriptlet' to 'def authorize(a):
+    return True
+': the required function "authorize" defines arguments ["a"] (expected ["details" "object" "entitlement"])
+
+## details struct -- ACTUAL fields on 7.3 (upstream docs are WRONG/stale)
+dir(details)                  = ["Certificate", "Chain", "RequestDetails"]
+dir(details.RequestDetails)   = ["IsAllProjectsRequest", "ProjectName", "Protocol", "Username"]
+dir(details.Certificate)      = ["certificate", "description", "name", "projects", "restricted", "type"]
+
+# Upstream https://linuxcontainers.org/incus/docs/main/authorization/ documents
+# details.Username / details.Protocol / details.ProjectName as TOP-LEVEL fields.
+# Using them on this server fails at runtime:
+Error: Authorization scriptlet execution failed with error: Failed to run: Invalid field "Username"
+# They are actually nested under details.RequestDetails.
+
+## Example observed values (spike-attestor-ro)
+name=spike-attestor-ro
+user=6ebaf5eb4cc9e003acb6a98ef7cdd24b1d2d7a00ef59f5fb9b654e3fa634db80   (cert fingerprint)
+proto=tls   restricted=True   certprojects=["spike-spiffe"]
+
+## Object string formats observed
+server:incus
+project:<project>
+instance:<project>/<name>
+image:<project>/<fingerprint>
+profile:<project>/<name>
+storage_volume:<project>/<pool>/<type>/<name>
+certificate:<fingerprint>
+
+## Entitlements observed, by operation
+GET /1.0 (client handshake)          -> server:incus can_view
+                                        server:incus can_view_sensitive
+GET instance / list instances        -> instance:<proj>/<name> can_view
+GET /1.0/resources                   -> server:incus can_view_resources
+event stream                         -> project:<proj> can_view_events
+                                        server:incus can_view_privileged_events
+PATCH/PUT instance config            -> instance:<proj>/<name> can_edit
+DELETE instance                      -> instance:<proj>/<name> can_edit     <-- no separate delete entitlement
+POST instance (rename)               -> instance:<proj>/<name> can_edit
+PUT instance state (stop/start)      -> instance:<proj>/<name> can_update_state
+exec                                 -> instance:<proj>/<name> can_exec
+file pull (sftp)                     -> instance:<proj>/<name> can_connect_sftp
+create instance                      -> project:<proj> can_create_instances
+create project                       -> server:incus can_create_projects
+add trust certificate                -> server:incus can_create_certificates
+edit project                         -> project:<proj> can_edit
+edit profile                         -> profile:<proj>/<name> can_edit
+server config write                  -> server:incus can_edit
+list images                          -> image:<proj>/<fingerprint> can_view
+list storage volumes                 -> storage_volume:<proj>/<pool>/<type>/<name> can_view
+list certificates                    -> certificate:<fingerprint> can_view
+
+## Key consequences
+1. DELETE and PATCH share `can_edit`. Granting config write necessarily grants delete.
+2. The scriptlet receives ONLY (object, entitlement). The request BODY is never
+   passed, so no rule can distinguish "set user.spiffe-bootstrap" from
+   "set volatile.uuid" or "set security.privileged".
+3. `server:incus can_view` is required for the client handshake; denying it breaks
+   every request (see minimal-grant-experiment.txt).
+4. `server:incus can_view_sensitive` is asked on every request but is NOT required:
+   denying it still returns full instance config including volatile.uuid.

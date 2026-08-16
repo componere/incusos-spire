@@ -1,0 +1,59 @@
+# P6 server-identity and image-traceability fields
+# captured: 2026-08-16 16:37:45 PDT
+
+$ incus query ovh-incusos:/1.0 | jq '{auth,auth_user_name,auth_user_method,environment:{server:.environment.server,server_name:.environment.server_name,server_version:.environment.server_version,server_clustered:.environment.server_clustered,server_event_mode:.environment.server_event_mode,certificate_fingerprint:.environment.certificate_fingerprint,kernel:.environment.kernel,os_name:.environment.os_name}}'
+{
+  "auth": "trusted",
+  "auth_user_name": "84f4f0407099db24b6b1d5b4d8fb1ca4362ad49644a649198c2dfef5228cbc7d",
+  "auth_user_method": "tls",
+  "environment": {
+    "server": "incus",
+    "server_name": "ns1001912.ip-147-135-105.us",
+    "server_version": "7.3",
+    "server_clustered": false,
+    "server_event_mode": "full-mesh",
+    "certificate_fingerprint": "822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd",
+    "kernel": "Linux",
+    "os_name": "IncusOS"
+  }
+}
+
+$ incus query ovh-incusos:/1.0/cluster | jq '{server_name,enabled}'
+{
+  "server_name": "",
+  "enabled": false
+}
+
+$ incus image info f005c3b83cc4 ovh-incusos:   # OCI container image referenced by volatile.base_image
+Fingerprint: f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+Size: 47.03MiB
+Architecture: x86_64
+Type: container
+Public: no
+Timestamps:
+    Created: 2026/08/02 17:00 PDT
+    Uploaded: 2026/08/15 20:46 PDT
+    Expires: never
+    Last used: 2026/08/16 15:32 PDT
+Properties:
+    architecture: x86_64
+    description: docker.io/library/debian (OCI)
+    id: debian:trixie
+
+$ incus image info 9eb18b1a9368 ovh-incusos:   # VM image referenced by volatile.base_image
+Fingerprint: 9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+Size: 347.08MiB
+Architecture: x86_64
+Type: virtual-machine
+Public: no
+Timestamps:
+    Created: 2026/08/15 17:00 PDT
+    Uploaded: 2026/08/16 16:30 PDT
+    Expires: 1969/12/31 16:00 PST
+    Last used: 2026/08/16 16:30 PDT
+Properties:
+    os: Debian
+    release: trixie
+    serial: 20260816_05:24
+    type: disk-kvm.img
+    variant: default

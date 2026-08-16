@@ -1,0 +1,5 @@
+++ incus config unset ovh-incusos:spike-authz-probe user.evil --project spike-spiffe
+++ incus config unset ovh-incusos:spike-authz-probe limits.memory --project spike-spiffe
+++ incus config unset ovh-incusos:spike-authz-probe security.privileged --project spike-spiffe
+++ incus config unset ovh-incusos:spike-authz-probe user.spiffe-bootstrap --project spike-spiffe
+Error: Can't unset key 'user.spiffe-bootstrap', it's not currently set

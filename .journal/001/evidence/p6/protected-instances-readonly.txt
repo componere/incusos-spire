@@ -1,0 +1,54 @@
+# P6 read-only cross-check of protected containers (no modification)
+# captured: 2026-08-16 16:29:55 PDT
+--- spire-server ---
+{
+  "name": "spire-server",
+  "project": "default",
+  "type": "container",
+  "status": "Running",
+  "location": "none",
+  "created_at": "2026-08-16T22:03:58.310877841Z",
+  "last_used_at": "2026-08-16T22:37:18.608572302Z",
+  "uuid": "089b0067-0c97-443e-8f42-c19776761f28",
+  "generation": "089b0067-0c97-443e-8f42-c19776761f28",
+  "base_image": "cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e"
+}
+--- spire-agent ---
+{
+  "name": "spire-agent",
+  "project": "default",
+  "type": "container",
+  "status": "Running",
+  "location": "none",
+  "created_at": "2026-08-16T22:33:44.717723112Z",
+  "last_used_at": "2026-08-16T22:50:01.506901366Z",
+  "uuid": "45418cd0-e40f-4b58-a77c-ef141cb53439",
+  "generation": "45418cd0-e40f-4b58-a77c-ef141cb53439",
+  "base_image": "a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622"
+}
+--- spike-probe ---
+{
+  "name": "spike-probe",
+  "project": "default",
+  "type": "container",
+  "status": "Running",
+  "location": "none",
+  "created_at": "2026-08-16T22:04:51.806949002Z",
+  "last_used_at": "2026-08-16T22:37:18.582608444Z",
+  "uuid": "ef392e37-671d-43c0-b796-658e5741408a",
+  "generation": "ef392e37-671d-43c0-b796-658e5741408a",
+  "base_image": "f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16"
+}
+--- spike-p3-stage ---
+{
+  "name": "spike-p3-stage",
+  "project": "default",
+  "type": "container",
+  "status": "Running",
+  "location": "none",
+  "created_at": "2026-08-16T22:32:51.924323236Z",
+  "last_used_at": "2026-08-16T23:07:18.234959182Z",
+  "uuid": "9ec71c9f-b5b6-4010-a392-ded7532fbb09",
+  "generation": "9ec71c9f-b5b6-4010-a392-ded7532fbb09",
+  "base_image": "f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16"
+}

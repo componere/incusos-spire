@@ -1,0 +1,75 @@
+=== final server config (admin view) ===
+config:
+  authorization.client.tls-restricted: scriptlet
+  authorization.scriptlet: <see scriptlet-p5.star>
+    # P5 least-privilege authorization scriptlet for Incus 7.3.
+    #
+    # Routed via:  incus config set <remote>: authorization.client.tls-restricted=scriptlet
+    #
+    # Unrestricted TLS clients (the admin certificate) and the local unix socket
+    # keep their built-in "allow" route and are NEVER evaluated by this function.
+    # Built-in routing observed in Incus 7.3 docs and confirmed live:
+    #   unix=allow, tls=allow, tls-restricted=tls, oidc=allow, default=deny
+    #
+    # WARNING (verified live): routing tls-restricted away from the "tls" driver
+    # stops Incus from enforcing the per-certificate project list. This scriptlet
+    # therefore re-implements project confinement itself, and additionally
+    # requires that the certificate still be admin-marked restricted to the
+    # project it is acting on.
+    #
+    # Object formats observed live on this server:
+    #   server:incus
+    #   project:<project>
+    #   instance:<project>/<name>
+    #   image:<project>/<fingerprint>
+    #   profile:<project>/<name>
+    #   storage_volume:<project>/<pool>/<type>/<name>
+    #   certificate:<fingerprint>
+
+    PROJECT = "spike-spiffe"
+
+    def authorize(details, object, entitlement):
+
+
+
+
+
+
+  core.https_address: :8443
+  storage.backups_volume: local/backups
+  storage.images_volume: local/images
+  storage.logs_volume: local/logs
+
+=== authorization routing keys ===
+scriptlet
+
+=== admin unaffected: default project protected instances ===
++----------------+---------+
+|      NAME      |  STATE  |
++----------------+---------+
+| spike-p3-stage | RUNNING |
++----------------+---------+
+| spike-probe    | RUNNING |
++----------------+---------+
+| spire-agent    | RUNNING |
++----------------+---------+
+| spire-server   | RUNNING |
++----------------+---------+
+
+=== trust store ===
++------------------------+--------+-------------------------+--------------+----------------------+
+|          NAME          |  TYPE  |       DESCRIPTION       | FINGERPRINT  |     EXPIRY DATE      |
++------------------------+--------+-------------------------+--------------+----------------------+
+| admin                  | client | Initial admin client    | 84f4f0407099 | 2036/08/12 12:35 PDT |
++------------------------+--------+-------------------------+--------------+----------------------+
+| spike-attestor-ro      | client | P5 read-only attestor   | 6ebaf5eb4cc9 | 2026/09/15 16:32 PDT |
++------------------------+--------+-------------------------+--------------+----------------------+
+| spike-bootstrap-writer | client | P5 bootstrap key writer | afd4f608e0f0 | 2026/09/15 16:32 PDT |
++------------------------+--------+-------------------------+--------------+----------------------+
+
+=== spike-spiffe contents ===
++-------------------+---------+
+|       NAME        |  STATE  |
++-------------------+---------+
+| spike-authz-probe | RUNNING |
++-------------------+---------+

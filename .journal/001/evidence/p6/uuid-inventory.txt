@@ -1,0 +1,14 @@
+
+# P6 final uniqueness inventory (all projects, admin view)
+# captured: 2026-08-16 16:38:01 PDT
+$ incus query "ovh-incusos:/1.0/instances?recursion=1&all-projects=true" | jq -r '.[] | [.project,.name,.type,.config["volatile.uuid"],.config["volatile.uuid.generation"]] | @tsv'
+default         spike-p3-stage     container        9ec71c9f-b5b6-4010-a392-ded7532fbb09  9ec71c9f-b5b6-4010-a392-ded7532fbb09
+default         spike-probe        container        ef392e37-671d-43c0-b796-658e5741408a  ef392e37-671d-43c0-b796-658e5741408a
+default         spire-agent        container        45418cd0-e40f-4b58-a77c-ef141cb53439  45418cd0-e40f-4b58-a77c-ef141cb53439
+default         spire-server       container        089b0067-0c97-443e-8f42-c19776761f28  089b0067-0c97-443e-8f42-c19776761f28
+spike-spiffe    spike-authz-probe  container        6d1c5ee3-5b2f-4ead-8e54-db985302fbdb  6d1c5ee3-5b2f-4ead-8e54-db985302fbdb
+spike-uuid-lab  lab-c1r            container        e9e6a2a0-d695-42d3-8e8c-92d290bfc7da  e9e6a2a0-d695-42d3-8e8c-92d290bfc7da
+spike-uuid-lab  lab-c2             container        e53c19e8-ae06-49f3-bff6-15be6a922b42  00000000-0000-4000-8000-000000000000
+spike-uuid-lab  lab-c3             container        f09e831b-fd6a-40fa-928a-d13c35d5959e  f09e831b-fd6a-40fa-928a-d13c35d5959e
+spike-uuid-lab  lab-vm1r           virtual-machine  8c19cbce-095a-4d91-af0b-78a59c58589d  8c19cbce-095a-4d91-af0b-78a59c58589d
+spike-uuid-lab  lab-vm2            virtual-machine  8c19cbce-095a-4d91-af0b-78a59c58589d  3ef71816-eeae-4003-a238-bcd8c62a5076

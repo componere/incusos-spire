@@ -1,0 +1,5 @@
+# P6 VM image download + launch (progress percentage lines collapsed)
+$ incus launch images:debian/13 ovh-incusos:lab-vm1 --vm --project spike-uuid-lab -c limits.memory=1GiB
+Launching ovh-incusos:lab-vm1
+
+# Download of images:debian/13 (fingerprint 9eb18b1a9368, 347.08MiB) completed in roughly 40 seconds; no --empty --vm substitution was needed.

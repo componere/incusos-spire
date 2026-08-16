@@ -1,0 +1,12 @@
+# Experiment: drop the 'server:incus can_view' grant entirely.
+# Scriptlet used: scriptlet-tighter-rejected.star
+
+$ INCUS_CONF=<attestor> incus query "ovh:/1.0/instances/spike-authz-probe?project=spike-spiffe"
+Error: failed to parse: value expected
+
+$ INCUS_CONF=<writer> incus query -X PATCH ".../instances/spike-authz-probe?project=spike-spiffe" -d ...
+Error: Permission denied
+
+# Conclusion: GET /1.0 is the client handshake. Denying server:incus can_view
+# breaks every request for that identity, including the intended ones.
+# Therefore server:incus can_view is an IRREDUCIBLE grant.

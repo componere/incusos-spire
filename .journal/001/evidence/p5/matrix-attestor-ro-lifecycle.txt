@@ -1,0 +1,15 @@
+### CASE: L1 create instance in spike-spiffe (docker remote now present)
+$ incus create docker:debian:trixie ovh:spike-authz-victim --project spike-spiffe -c oci.entrypoint="sleep infinity"
+Creating ovh:spike-authz-victim
+[exit=0]
+
+### CASE: L2 delete throwaway instance
+$ incus delete ovh:spike-authz-victim --project spike-spiffe --force
+[exit=0]
+
+### CASE: L3 list after delete
++-------------------+---------+----------------------+------------------------------------------------+-----------------+-----------+
+|       NAME        |  STATE  |         IPV4         |                      IPV6                      |      TYPE       | SNAPSHOTS |
++-------------------+---------+----------------------+------------------------------------------------+-----------------+-----------+
+| spike-authz-probe | RUNNING | 10.55.156.248 (eth0) | fd42:eb1e:5a09:f8d2:1266:6aff:fe73:5df4 (eth0) | CONTAINER (APP) | 0         |
++-------------------+---------+----------------------+------------------------------------------------+-----------------+-----------+

@@ -1,0 +1,54 @@
+# P6 cleanup transcript
+# captured: 2026-08-16 16:38:35 PDT
+
+$ incus list ovh-incusos: --project spike-uuid-lab --format csv -c nst   # before cleanup
+lab-c1r,RUNNING,CONTAINER (APP)
+lab-c2,RUNNING,CONTAINER (APP)
+lab-c3,STOPPED,CONTAINER
+lab-vm1r,RUNNING,VIRTUAL-MACHINE
+lab-vm2,RUNNING,VIRTUAL-MACHINE
+
+$ incus delete ovh-incusos:lab-c1r ovh-incusos:lab-c2 ovh-incusos:lab-c3 ovh-incusos:lab-vm1r ovh-incusos:lab-vm2 --force --project spike-uuid-lab
+exit=0
+$ incus list ovh-incusos: --project spike-uuid-lab --format csv
+$ incus storage volume list ovh-incusos:local --project spike-uuid-lab --format csv
+image,9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7,,block,1
+image,a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622,,filesystem,1
+image,cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e,,filesystem,1
+image,f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16,,filesystem,1
+
+$ incus project delete ovh-incusos:spike-uuid-lab
+Project ovh-incusos:spike-uuid-lab deleted
+exit=0
+
+$ incus image delete ovh-incusos:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7   # images:debian/13 VM image cached by P6 into the default project store
+exit=0
+
+## Post-cleanup verification
+$ incus project list ovh-incusos: --format csv -c n
+default (current)
+spike-spiffe
+$ incus image list ovh-incusos: --format csv -c fdt
+a5cadb6ee911,ghcr.io/spiffe/spire-agent (OCI),CONTAINER
+cc908044b88b,ghcr.io/spiffe/spire-server (OCI),CONTAINER
+f005c3b83cc4,docker.io/library/debian (OCI),CONTAINER
+$ incus storage volume list ovh-incusos:local --format csv -c ntcu | sort
+a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622,image,filesystem,1
+backups,custom,filesystem,1
+cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e,image,filesystem,1
+f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16,image,filesystem,1
+images,custom,filesystem,1
+logs,custom,filesystem,1
+spike-ca-state,custom,filesystem,1
+spike-p3-stage,container,filesystem,1
+spike-probe,container,filesystem,1
+spike-spire-agent-state,custom,filesystem,2
+spike-spire-server-state,custom,filesystem,1
+spire-agent,container,filesystem,1
+spire-server,container,filesystem,1
+
+$ protected containers, read-only re-check (must equal the pre-experiment capture)
+spire-server Running	089b0067-0c97-443e-8f42-c19776761f28	089b0067-0c97-443e-8f42-c19776761f28
+spire-agent Running	45418cd0-e40f-4b58-a77c-ef141cb53439	45418cd0-e40f-4b58-a77c-ef141cb53439
+spike-probe Running	ef392e37-671d-43c0-b796-658e5741408a	ef392e37-671d-43c0-b796-658e5741408a
+spike-p3-stage Running	9ec71c9f-b5b6-4010-a392-ded7532fbb09	9ec71c9f-b5b6-4010-a392-ded7532fbb09

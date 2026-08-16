@@ -1,0 +1,27 @@
+++ incus profile device add ovh-incusos:default root disk pool=local path=/ --project spike-spiffe
+Device root added to default
+++ incus profile device add ovh-incusos:default eth0 nic network=incusbr0 --project spike-spiffe
+Device eth0 added to default
+++ incus profile show ovh-incusos:default --project spike-spiffe
+config: {}
+description: Default Incus profile for project spike-spiffe
+devices:
+  eth0:
+    network: incusbr0
+    type: nic
+  root:
+    path: /
+    pool: local
+    type: disk
+name: default
+used_by: []
+project: spike-spiffe
+++ incus launch docker:debian:trixie ovh-incusos:spike-authz-probe --project spike-spiffe -c 'oci.entrypoint=sleep infinity'
+Launching ovh-incusos:spike-authz-probe
+++ incus list ovh-incusos: --project spike-spiffe
++-------------------+---------+----------------------+------------------------------------------------+-----------------+-----------+
+|       NAME        |  STATE  |         IPV4         |                      IPV6                      |      TYPE       | SNAPSHOTS |
++-------------------+---------+----------------------+------------------------------------------------+-----------------+-----------+
+| spike-authz-probe | RUNNING | 10.55.156.248 (eth0) | fd42:eb1e:5a09:f8d2:1266:6aff:fe73:5df4 (eth0) | CONTAINER (APP) | 0         |
++-------------------+---------+----------------------+------------------------------------------------+-----------------+-----------+
+++ set +x

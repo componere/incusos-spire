@@ -1,0 +1,21 @@
+# P6 UUID lookup surface — how an attestor can resolve a UUID to an instance record
+# captured: 2026-08-16 16:32:54 PDT
+# target uuid: e9e6a2a0-d695-42d3-8e8c-92d290bfc7da
+
+$ incus list ovh-incusos: --project spike-uuid-lab config.volatile.uuid=e9e6a2a0-d695-42d3-8e8c-92d290bfc7da --format csv -c ns
+lab-c1r,RUNNING
+
+$ incus query "ovh-incusos:/1.0/instances?recursion=1&project=spike-uuid-lab&filter=config.volatile.uuid%20eq%20e9e6a2a0-d695-42d3-8e8c-92d290bfc7da" | jq -r '.[].name'
+lab-c1r
+
+$ incus query "ovh-incusos:/1.0/instances?recursion=1&all-projects=true&filter=config.volatile.uuid%20eq%20e9e6a2a0-d695-42d3-8e8c-92d290bfc7da" | jq -r '.[] | .project+"/"+.name'
+spike-uuid-lab/lab-c1r
+
+$ incus query "ovh-incusos:/1.0/instances?project=spike-uuid-lab"   # non-recursive listing, no config exposed
+[
+	"/1.0/instances/lab-c1r?project=spike-uuid-lab",
+	"/1.0/instances/lab-c2?project=spike-uuid-lab",
+	"/1.0/instances/lab-c3?project=spike-uuid-lab",
+	"/1.0/instances/lab-vm1?project=spike-uuid-lab"
+]
+

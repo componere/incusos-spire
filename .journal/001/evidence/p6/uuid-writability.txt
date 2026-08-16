@@ -1,0 +1,53 @@
+# P6 adversarial: is volatile.uuid server-enforced or client-writable?
+# captured: 2026-08-16 16:36:00 PDT
+# lab-c3 uuid (target value to collide with) = f09e831b-fd6a-40fa-928a-d13c35d5959e
+
+$ incus config set ovh-incusos:lab-c2 volatile.uuid f09e831b-fd6a-40fa-928a-d13c35d5959e --project spike-uuid-lab   # attempt duplicate UUID (admin cert)
+Warning: the “<key> <value>” syntax is deprecated; please switch to the “<key>=<value>” syntax
+exit=0
+lab-c2 volatile.uuid now = f09e831b-fd6a-40fa-928a-d13c35d5959e
+lab-c3 volatile.uuid now = f09e831b-fd6a-40fa-928a-d13c35d5959e
+
+$ incus config set ovh-incusos:lab-c2 volatile.uuid.generation 00000000-0000-4000-8000-000000000000 --project spike-uuid-lab
+Warning: the “<key> <value>” syntax is deprecated; please switch to the “<key>=<value>” syntax
+exit=0
+lab-c2 volatile.uuid.generation now = 00000000-0000-4000-8000-000000000000
+
+$ incus query "ovh-incusos:/1.0/instances?recursion=1&all-projects=true&filter=config.volatile.uuid%20eq%20f09e831b-fd6a-40fa-928a-d13c35d5959e" | jq -r '.[]|.project+"/"+.name'   # ambiguous resolution?
+spike-uuid-lab/lab-c2
+spike-uuid-lab/lab-c3
+
+## Does a restart repair the tampered value, and is the value validated?
+$ incus restart ovh-incusos:lab-c2 --project spike-uuid-lab
+lab-c2 after restart: volatile.uuid=f09e831b-fd6a-40fa-928a-d13c35d5959e volatile.uuid.generation=00000000-0000-4000-8000-000000000000
+
+$ incus config set ovh-incusos:lab-c2 volatile.uuid=not-a-uuid --project spike-uuid-lab   # is the value format validated?
+Error: Invalid config: Invalid UUID
+exit=1
+lab-c2 volatile.uuid now = f09e831b-fd6a-40fa-928a-d13c35d5959e
+
+$ incus config unset ovh-incusos:lab-c2 volatile.uuid --project spike-uuid-lab   # can it be cleared?
+exit=0
+lab-c2 volatile.uuid after unset = ''
+$ incus restart ovh-incusos:lab-c2 --project spike-uuid-lab   # does Incus regenerate a missing uuid?
+lab-c2 volatile.uuid after restart = 'e53c19e8-ae06-49f3-bff6-15be6a922b42'
+lab-c2 volatile.uuid.generation after restart = '00000000-0000-4000-8000-000000000000'
+
+## Does guest-visible DMI UUID follow a tampered volatile.uuid? (VM lab-vm2 impersonating lab-vm1r)
+lab-vm1r (victim) volatile.uuid = 8c19cbce-095a-4d91-af0b-78a59c58589d
+$ incus config set ovh-incusos:lab-vm2 volatile.uuid=8c19cbce-095a-4d91-af0b-78a59c58589d --project spike-uuid-lab && incus restart ovh-incusos:lab-vm2 --project spike-uuid-lab
+lab-vm2 host volatile.uuid   = 8c19cbce-095a-4d91-af0b-78a59c58589d
+lab-vm2 guest product_uuid   = 8c19cbce-095a-4d91-af0b-78a59c58589d
+lab-vm1r guest product_uuid  = 8c19cbce-095a-4d91-af0b-78a59c58589d
+
+## Is volatile.base_image (the image-fingerprint selector source) also writable?
+$ incus config set ovh-incusos:lab-c3 volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7 --project spike-uuid-lab   # claim the VM image fingerprint on a container
+exit=0
+lab-c3 volatile.base_image now = 9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+lab-c3 type = container
+
+## Are the server-owned top-level fields writable? (type / name / project / location)
+$ incus query ovh-incusos:/1.0/instances/lab-c3?project=spike-uuid-lab -X PATCH -d '{"type":"virtual-machine","name":"lab-impostor","project":"default","location":"elsewhere"}'
+exit=0
+{"name":"lab-c3","project":"spike-uuid-lab","type":"container","location":"none","status":"Stopped"}
+(values above are unchanged => these fields are server-owned, not client-settable through the instance PATCH surface)

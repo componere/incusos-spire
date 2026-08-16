@@ -1,0 +1,18 @@
+===== spike-attestor-ro =====
+|      NAME       |                URL                 |   PROTOCOL    |  AUTH TYPE  | PUBLIC | STATIC | GLOBAL |
+| ovh             | https://147.135.105.83:8443        | incus         | tls         | NO     | NO     | NO     |
+--- whoami (incus info) ---
+config: {}
+api_extensions_count: 541
+api_status: stable
+api_version: "1.0"
+auth: trusted
+===== spike-bootstrap-writer =====
+|      NAME       |                URL                 |   PROTOCOL    |  AUTH TYPE  | PUBLIC | STATIC | GLOBAL |
+| ovh             | https://147.135.105.83:8443        | incus         | tls         | NO     | NO     | NO     |
+--- whoami (incus info) ---
+config: {}
+api_extensions_count: 541
+api_status: stable
+api_version: "1.0"
+auth: trusted

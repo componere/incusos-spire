@@ -1,0 +1,216 @@
+# P6 container lifecycle matrix — instance lab-c1, project spike-uuid-lab, remote ovh-incusos:
+# started: 2026-08-16 16:30:54 PDT
+
+$ incus launch docker:debian:trixie ovh-incusos:lab-c1 --project spike-uuid-lab -c oci.entrypoint="sleep infinity"
+Launching ovh-incusos:lab-c1
+### T0 after create (running)  [16:30:58 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+
+$ incus stop ovh-incusos:lab-c1 --project spike-uuid-lab
+### T1 after stop  [16:31:20 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+
+$ incus start ovh-incusos:lab-c1 --project spike-uuid-lab
+### T2 after start  [16:31:23 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+
+$ incus snapshot create ovh-incusos:lab-c1 snap0 --project spike-uuid-lab
+### T3a after snapshot create (instance record)  [16:31:24 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+### T3b snapshot record  [16:31:24 PDT]  snapshot=lab-c1/snap0
+  name=snap0
+  created_at=2026-08-16T23:31:24.275650361Z
+  config[volatile.uuid]=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  config[volatile.uuid.generation]=c846f04c-f91a-4892-b44f-1de86a3f4d22
+
+$ incus config set ovh-incusos:lab-c1 user.p6-marker=post-snapshot --project spike-uuid-lab
+$ incus config get ovh-incusos:lab-c1 user.p6-marker --project spike-uuid-lab
+post-snapshot
+### T4a after config set (pre-restore)  [16:31:34 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+
+$ incus snapshot restore ovh-incusos:lab-c1 snap0 --project spike-uuid-lab   # instance RUNNING
+### T4b after restore attempt (running)  [16:31:38 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=50dd028f-da77-4f87-83e8-0773c72cbc05
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+
+$ incus config get ovh-incusos:lab-c1 user.p6-marker --project spike-uuid-lab   # after restore
+
+(empty line above = key absent; snapshot config was rolled back)
+
+$ incus snapshot restore ovh-incusos:lab-c1 snap0 --project spike-uuid-lab   # second restore, same snapshot
+### T4c after SECOND restore of same snapshot  [16:31:50 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=f5468ef3-14c5-4a6b-b7fe-e33384104289
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+### T4d snapshot record after two restores  [16:31:50 PDT]  snapshot=lab-c1/snap0
+  name=snap0
+  created_at=2026-08-16T23:31:24.275650361Z
+  config[volatile.uuid]=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  config[volatile.uuid.generation]=c846f04c-f91a-4892-b44f-1de86a3f4d22
+
+$ incus copy ovh-incusos:lab-c1 ovh-incusos:lab-c2 --project spike-uuid-lab   # source RUNNING
+### T5a source lab-c1 after copy  [16:32:00 PDT]  instance=lab-c1
+  name=lab-c1
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=f5468ef3-14c5-4a6b-b7fe-e33384104289
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=80b6605c-69ac-4a37-ab65-5f37ce8a66a7
+### T5b clone lab-c2 (stopped, not yet started)  [16:32:00 PDT]  instance=lab-c2
+  name=lab-c2
+  project=spike-uuid-lab
+  type=container
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:31:59.850537889Z
+  volatile.uuid=8143228f-fa57-4c09-bae1-5bf3f227cb89
+  volatile.uuid.generation=8143228f-fa57-4c09-bae1-5bf3f227cb89
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=1640db69-eb9e-494e-a571-6d487a728432
+
+$ incus start ovh-incusos:lab-c2 --project spike-uuid-lab
+### T5c clone lab-c2 after first start  [16:32:03 PDT]  instance=lab-c2
+  name=lab-c2
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:31:59.850537889Z
+  volatile.uuid=8143228f-fa57-4c09-bae1-5bf3f227cb89
+  volatile.uuid.generation=8143228f-fa57-4c09-bae1-5bf3f227cb89
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=1640db69-eb9e-494e-a571-6d487a728432
+
+$ incus copy ovh-incusos:lab-c1/snap0 ovh-incusos:lab-c3 --project spike-uuid-lab   # copy FROM SNAPSHOT
+### T5d clone-from-snapshot lab-c3  [16:32:04 PDT]  instance=lab-c3
+  name=lab-c3
+  project=spike-uuid-lab
+  type=container
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:32:04.44397051Z
+  volatile.uuid=f09e831b-fd6a-40fa-928a-d13c35d5959e
+  volatile.uuid.generation=f09e831b-fd6a-40fa-928a-d13c35d5959e
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=e4d04d28-bdc2-410d-a7fd-6583a4642f8b
+
+$ incus rename ovh-incusos:lab-c1 lab-c1r --project spike-uuid-lab   # while RUNNING
+Error: Renaming of running instance not allowed
+exit=1
+$ incus stop ovh-incusos:lab-c1 --project spike-uuid-lab
+$ incus rename ovh-incusos:lab-c1 lab-c1r --project spike-uuid-lab   # while STOPPED
+exit=0
+### T6a after rename lab-c1 -> lab-c1r (stopped)  [16:32:15 PDT]  instance=lab-c1r
+  name=lab-c1r
+  project=spike-uuid-lab
+  type=container
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=f5468ef3-14c5-4a6b-b7fe-e33384104289
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=e17b46f4-ded0-4f78-a8dc-d0fc9b6c5b94
+
+$ incus start ovh-incusos:lab-c1r --project spike-uuid-lab
+### T6b lab-c1r after start  [16:32:18 PDT]  instance=lab-c1r
+  name=lab-c1r
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:56.281412722Z
+  volatile.uuid=c846f04c-f91a-4892-b44f-1de86a3f4d22
+  volatile.uuid.generation=f5468ef3-14c5-4a6b-b7fe-e33384104289
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=e17b46f4-ded0-4f78-a8dc-d0fc9b6c5b94
+
+$ incus snapshot list ovh-incusos:lab-c1r --project spike-uuid-lab
++-------+----------------------+------------+----------+
+| NAME  |       TAKEN AT       | EXPIRES AT | STATEFUL |
++-------+----------------------+------------+----------+
+| snap0 | 2026/08/16 16:31 PDT |            | NO       |
++-------+----------------------+------------+----------+
+
+$ incus delete ovh-incusos:lab-c1r --force --project spike-uuid-lab   # instance had snapshot snap0
+exit=0
+$ incus query ovh-incusos:/1.0/instances/lab-c1r?project=spike-uuid-lab   # after delete
+Error: Failed to fetch instance "lab-c1r" in project "spike-uuid-lab": Instance not found
+$ incus launch docker:debian:trixie ovh-incusos:lab-c1r --project spike-uuid-lab -c oci.entrypoint="sleep infinity"   # SAME NAME recreate
+Launching ovh-incusos:lab-c1r
+### T7 recreated same name lab-c1r  [16:32:39 PDT]  instance=lab-c1r
+  name=lab-c1r
+  project=spike-uuid-lab
+  type=container
+  status=Running
+  location=none
+  created_at=2026-08-16T23:32:37.236591866Z
+  volatile.uuid=e9e6a2a0-d695-42d3-8e8c-92d290bfc7da
+  volatile.uuid.generation=e9e6a2a0-d695-42d3-8e8c-92d290bfc7da
+  volatile.base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id=f726d289-bcee-4ae9-b638-f36c5bd833e7

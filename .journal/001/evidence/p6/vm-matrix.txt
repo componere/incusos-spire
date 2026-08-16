@@ -1,0 +1,197 @@
+# P6 VM lifecycle matrix — instance lab-vm1 (images:debian/13, VIRTUAL-MACHINE), project spike-uuid-lab
+# launch transcript (progress lines elided): incus launch images:debian/13 ovh-incusos:lab-vm1 --vm --project spike-uuid-lab -c limits.memory=1GiB
+# captured: 2026-08-16 16:33:18 PDT
+### V0 after create (running)  [16:33:18 PDT]  instance=lab-vm1
+  name=lab-vm1
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:54.0326213Z
+  volatile.uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=946752de-dca5-4ce0-9e92-06a74bdb4359
+
+$ incus config show ovh-incusos:lab-vm1 --expanded --project spike-uuid-lab
+architecture: x86_64
+config:
+  image.architecture: amd64
+  image.description: Debian trixie amd64 (20260816_05:24)
+  image.os: Debian
+  image.release: trixie
+  image.serial: '20260816_05:24'
+  image.type: disk-kvm.img
+  image.variant: default
+  limits.memory: 1GiB
+  volatile.base_image: 9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id: 946752de-dca5-4ce0-9e92-06a74bdb4359
+  volatile.eth0.host_name: tapa99f0ca4
+  volatile.eth0.hwaddr: 10:66:6a:f6:24:cd
+  volatile.last_state.agent: STARTED
+  volatile.last_state.power: RUNNING
+  volatile.uuid: d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation: d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.vm.needs_reset: "true"
+  volatile.vm.rtc_adjustment: "0"
+  volatile.vm.rtc_offset: "-1"
+  volatile.vsock_id: "1189874259"
+devices:
+  eth0:
+    name: eth0
+    network: incusbr0
+    type: nic
+  root:
+    path: /
+    pool: local
+    type: disk
+ephemeral: false
+profiles:
+  - default
+stateful: false
+description: ""
+
+## Guest-visible identity material (VM, read from inside the guest)
+$ incus exec ovh-incusos:lab-vm1 --project spike-uuid-lab -- sh -c 'for f in product_uuid product_serial chassis_asset_tag sys_vendor product_name; do printf "%s=" $f; cat /sys/class/dmi/id/$f 2>/dev/null || echo "<unreadable>"; done'
+product_uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+product_serial=
+chassis_asset_tag=
+sys_vendor=QEMU
+product_name=Standard PC (Q35 + ICH9, 2009)
+$ incus exec ovh-incusos:lab-vm1 --project spike-uuid-lab -- sh -c 'cat /sys/class/dmi/id/product_uuid'  # as root
+host-side volatile.uuid            = d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+host-side volatile.uuid.generation = d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+
+$ incus stop ovh-incusos:lab-vm1 --project spike-uuid-lab
+### V1 after stop  [16:33:42 PDT]  instance=lab-vm1
+  name=lab-vm1
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:30:54.0326213Z
+  volatile.uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=946752de-dca5-4ce0-9e92-06a74bdb4359
+
+$ incus start ovh-incusos:lab-vm1 --project spike-uuid-lab
+### V2 after start  [16:33:43 PDT]  instance=lab-vm1
+  name=lab-vm1
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:54.0326213Z
+  volatile.uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=946752de-dca5-4ce0-9e92-06a74bdb4359
+
+$ incus snapshot create ovh-incusos:lab-vm1 vsnap0 --project spike-uuid-lab   # VM RUNNING
+exit=0
+### V3a VM snapshot record  [16:33:51 PDT]  snapshot=lab-vm1/vsnap0
+  name=vsnap0
+  created_at=2026-08-16T23:33:51.313201422Z
+  config[volatile.uuid]=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  config[volatile.uuid.generation]=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+
+$ incus snapshot restore ovh-incusos:lab-vm1 vsnap0 --project spike-uuid-lab   # VM RUNNING
+exit=0
+### V3b after restore attempt  [16:33:52 PDT]  instance=lab-vm1
+  name=lab-vm1
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:54.0326213Z
+  volatile.uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation=74957ed8-19bc-4d23-b76b-763bb6f8bb60
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=946752de-dca5-4ce0-9e92-06a74bdb4359
+
+## Post-restore guest view (does the guest observe the generation change?)
+$ incus exec ovh-incusos:lab-vm1 --project spike-uuid-lab -- sh -c 'cat /sys/class/dmi/id/product_uuid; cut -d. -f1 /proc/uptime'
+Error: VM agent isn't currently running
+host volatile.uuid.generation = 74957ed8-19bc-4d23-b76b-763bb6f8bb60
+$ incus exec ... (retried after 25s; the restore restarted the VM, agent needed time)
+guest product_uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+guest uptime_seconds=35
+host volatile.uuid            = d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+host volatile.uuid.generation = 74957ed8-19bc-4d23-b76b-763bb6f8bb60
+NOTE: 'incus exec' immediately after restore returned: Error: VM agent isn't currently running -> restore restarts the VM.
+
+$ incus copy ovh-incusos:lab-vm1 ovh-incusos:lab-vm2 --project spike-uuid-lab   # source VM RUNNING
+exit=0
+### V4a source lab-vm1 after copy  [16:34:42 PDT]  instance=lab-vm1
+  name=lab-vm1
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Running
+  location=none
+  created_at=2026-08-16T23:30:54.0326213Z
+  volatile.uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation=74957ed8-19bc-4d23-b76b-763bb6f8bb60
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=946752de-dca5-4ce0-9e92-06a74bdb4359
+### V4b clone lab-vm2  [16:34:43 PDT]  instance=lab-vm2
+  name=lab-vm2
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:34:42.297835029Z
+  volatile.uuid=3ef71816-eeae-4003-a238-bcd8c62a5076
+  volatile.uuid.generation=3ef71816-eeae-4003-a238-bcd8c62a5076
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=d209a961-1120-48e2-8b80-51523b49807e
+
+$ incus start ovh-incusos:lab-vm2 --project spike-uuid-lab && sleep 25 && incus exec ovh-incusos:lab-vm2 -- cat /sys/class/dmi/id/product_uuid
+clone guest product_uuid = 3ef71816-eeae-4003-a238-bcd8c62a5076
+clone host volatile.uuid  = 3ef71816-eeae-4003-a238-bcd8c62a5076
+source host volatile.uuid  = d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+### V4c clone lab-vm2 after first boot  [16:35:18 PDT]  instance=lab-vm2
+  name=lab-vm2
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Running
+  location=none
+  created_at=2026-08-16T23:34:42.297835029Z
+  volatile.uuid=3ef71816-eeae-4003-a238-bcd8c62a5076
+  volatile.uuid.generation=3ef71816-eeae-4003-a238-bcd8c62a5076
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=d209a961-1120-48e2-8b80-51523b49807e
+
+$ incus rename ovh-incusos:lab-vm1 lab-vm1r --project spike-uuid-lab   # while RUNNING
+Error: Renaming of running instance not allowed
+exit=1
+$ incus stop ovh-incusos:lab-vm1 --project spike-uuid-lab
+$ incus rename ovh-incusos:lab-vm1 lab-vm1r --project spike-uuid-lab   # while STOPPED
+exit=0
+### V5 after rename lab-vm1 -> lab-vm1r  [16:35:32 PDT]  instance=lab-vm1r
+  name=lab-vm1r
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Stopped
+  location=none
+  created_at=2026-08-16T23:30:54.0326213Z
+  volatile.uuid=d6dc25da-644b-4ed8-813d-8cf8333b0eaa
+  volatile.uuid.generation=74957ed8-19bc-4d23-b76b-763bb6f8bb60
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=b09a933f-e828-4263-a4b6-f393d27d348d
+
+$ incus delete ovh-incusos:lab-vm1r --force --project spike-uuid-lab   # had snapshot vsnap0
+exit=0
+$ incus launch images:debian/13 ovh-incusos:lab-vm1r --vm --project spike-uuid-lab -c limits.memory=1GiB   # SAME NAME recreate (cached image)
+Launching ovh-incusos:lab-vm1r
+### V6 recreated same name lab-vm1r  [16:35:40 PDT]  instance=lab-vm1r
+  name=lab-vm1r
+  project=spike-uuid-lab
+  type=virtual-machine
+  status=Running
+  location=none
+  created_at=2026-08-16T23:35:39.392552664Z
+  volatile.uuid=8c19cbce-095a-4d91-af0b-78a59c58589d
+  volatile.uuid.generation=8c19cbce-095a-4d91-af0b-78a59c58589d
+  volatile.base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  volatile.cloud-init.instance-id=0fdf6768-41b5-40ff-84e5-d3e7729bae3d

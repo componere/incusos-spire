@@ -1,0 +1,13 @@
+++ incus config trust add-certificate ovh-incusos: /Users/josh/.spike-incusos-creds/spike-attestor-ro/conf/client.crt --name spike-attestor-ro --description 'P5 read-only attestor' --restricted --projects spike-spiffe
+++ incus config trust add-certificate ovh-incusos: /Users/josh/.spike-incusos-creds/spike-bootstrap-writer/conf/client.crt --name spike-bootstrap-writer --description 'P5 bootstrap key writer' --restricted --projects spike-spiffe
+++ incus config trust list ovh-incusos:
++------------------------+--------+-------------------------+--------------+----------------------+
+|          NAME          |  TYPE  |       DESCRIPTION       | FINGERPRINT  |     EXPIRY DATE      |
++------------------------+--------+-------------------------+--------------+----------------------+
+| admin                  | client | Initial admin client    | 84f4f0407099 | 2036/08/12 12:35 PDT |
++------------------------+--------+-------------------------+--------------+----------------------+
+| spike-attestor-ro      | client | P5 read-only attestor   | 6ebaf5eb4cc9 | 2026/09/15 16:32 PDT |
++------------------------+--------+-------------------------+--------------+----------------------+
+| spike-bootstrap-writer | client | P5 bootstrap key writer | afd4f608e0f0 | 2026/09/15 16:32 PDT |
++------------------------+--------+-------------------------+--------------+----------------------+
+++ set +x

@@ -1,0 +1,113 @@
+# P6 authoritative field inventory
+# captured: 2026-08-16 16:33:05 PDT
+
+$ incus config show ovh-incusos:lab-c1r --expanded --project spike-uuid-lab   # CONTAINER (OCI app)
+architecture: x86_64
+config:
+  environment.HOME: /root
+  environment.PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  environment.TERM: xterm
+  image.architecture: x86_64
+  image.description: docker.io/library/debian (OCI)
+  image.id: debian:trixie
+  image.type: oci
+  oci.cwd: /
+  oci.entrypoint: sleep infinity
+  oci.gid: "0"
+  oci.uid: "0"
+  volatile.base_image: f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+  volatile.cloud-init.instance-id: f726d289-bcee-4ae9-b638-f36c5bd833e7
+  volatile.container.oci: "true"
+  volatile.eth0.host_name: vethe4b7e151
+  volatile.eth0.hwaddr: 10:66:6a:41:4d:76
+  volatile.idmap.base: "0"
+  volatile.idmap.current: '[{"Isuid":true,"Isgid":false,"Hostid":1000000,"Nsid":0,"Maprange":1000000000},{"Isuid":false,"Isgid":true,"Hostid":1000000,"Nsid":0,"Maprange":1000000000}]'
+  volatile.idmap.next: '[{"Isuid":true,"Isgid":false,"Hostid":1000000,"Nsid":0,"Maprange":1000000000},{"Isuid":false,"Isgid":true,"Hostid":1000000,"Nsid":0,"Maprange":1000000000}]'
+  volatile.last_state.idmap: '[]'
+  volatile.last_state.power: RUNNING
+  volatile.uuid: e9e6a2a0-d695-42d3-8e8c-92d290bfc7da
+  volatile.uuid.generation: e9e6a2a0-d695-42d3-8e8c-92d290bfc7da
+devices:
+  eth0:
+    name: eth0
+    network: incusbr0
+    type: nic
+  root:
+    path: /
+    pool: local
+    type: disk
+ephemeral: false
+profiles:
+  - default
+stateful: false
+description: ""
+
+$ incus query ovh-incusos:/1.0/instances/lab-c1r?project=spike-uuid-lab | jq 'del(.expanded_config,.expanded_devices,.backups,.state)'
+{
+  "architecture": "x86_64",
+  "config": {
+    "environment.HOME": "/root",
+    "environment.PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "environment.TERM": "xterm",
+    "image.architecture": "x86_64",
+    "image.description": "docker.io/library/debian (OCI)",
+    "image.id": "debian:trixie",
+    "image.type": "oci",
+    "oci.cwd": "/",
+    "oci.entrypoint": "sleep infinity",
+    "oci.gid": "0",
+    "oci.uid": "0",
+    "volatile.base_image": "f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16",
+    "volatile.cloud-init.instance-id": "f726d289-bcee-4ae9-b638-f36c5bd833e7",
+    "volatile.container.oci": "true",
+    "volatile.eth0.host_name": "vethe4b7e151",
+    "volatile.eth0.hwaddr": "10:66:6a:41:4d:76",
+    "volatile.idmap.base": "0",
+    "volatile.idmap.current": "[{\"Isuid\":true,\"Isgid\":false,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000},{\"Isuid\":false,\"Isgid\":true,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000}]",
+    "volatile.idmap.next": "[{\"Isuid\":true,\"Isgid\":false,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000},{\"Isuid\":false,\"Isgid\":true,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000}]",
+    "volatile.last_state.idmap": "[]",
+    "volatile.last_state.power": "RUNNING",
+    "volatile.uuid": "e9e6a2a0-d695-42d3-8e8c-92d290bfc7da",
+    "volatile.uuid.generation": "e9e6a2a0-d695-42d3-8e8c-92d290bfc7da"
+  },
+  "created_at": "2026-08-16T23:32:37.236591866Z",
+  "description": "",
+  "devices": {},
+  "ephemeral": false,
+  "type": "container",
+  "status_code": 103,
+  "last_used_at": "2026-08-16T23:32:37.674904447Z",
+  "location": "none",
+  "name": "lab-c1r",
+  "profiles": [
+    "default"
+  ],
+  "project": "spike-uuid-lab",
+  "stateful": false,
+  "status": "Running"
+}
+
+$ incus query ovh-incusos:/1.0/instances/lab-c1r?project=spike-uuid-lab | jq -r '.config|keys[]'   # full config key list
+environment.HOME
+environment.PATH
+environment.TERM
+image.architecture
+image.description
+image.id
+image.type
+oci.cwd
+oci.entrypoint
+oci.gid
+oci.uid
+volatile.base_image
+volatile.cloud-init.instance-id
+volatile.container.oci
+volatile.eth0.host_name
+volatile.eth0.hwaddr
+volatile.idmap.base
+volatile.idmap.current
+volatile.idmap.next
+volatile.last_state.idmap
+volatile.last_state.power
+volatile.uuid
+volatile.uuid.generation

@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** G0 passed · P1 · P2 · **P3 / G3 PASSED** · P4 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md)
+**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial: writer grant not expressible) · P6 (schema frozen) — 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -404,6 +404,11 @@ Recorded objects (append at creation time):
 | 2 | `spire-agent` container (image amd64 `sha256:5fbe8ac3…`) | P3 | Remove after guest phases |
 | 3 | `/spike/negatives/**` on `spike-spire-agent-state` (rogue CA keys, foreign-TPM triplet, tampered chain) | P3 | Retained as evidence; removed with the volume |
 | 5 | `spike-p3-stage` container (stopped, TPM detached) | P3 | Tooling host for later phases |
+| 5 | Incus project `spike-spiffe` + container `spike-authz-probe` | P5 | Delete project last |
+| 5 | Trust certs `spike-attestor-ro` (`6ebaf5eb4cc9`), `spike-bootstrap-writer` (`afd4f608e0f0`) | P5 | `incus config trust remove` each |
+| 5 | Server config `authorization.client.tls-restricted`, then `authorization.scriptlet` | P5 | **Unset routing key FIRST**, then the scriptlet |
+| 5 | `$HOME/.spike-incusos-creds/` (both identity private keys, outside all repos) | P5 | `rm -rf` |
+| — | P6 left nothing behind: project `spike-uuid-lab`, instances, snapshots and clones all deleted in-phase | P6 | verified by orchestrator |
 
 ## Appendix F — Primary References
 

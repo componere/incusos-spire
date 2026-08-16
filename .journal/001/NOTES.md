@@ -16,3 +16,6 @@ Highest-risk unknowns are physical TPM/LDevID enrollment, least-privilege Incus 
 ## 2026-08-15 19:00 — Mac spike environment selected
 Created `spike/incusos-macos` at `.wt/spike-incusos-macos` from `origin/master`. Official IncusOS documentation supports aarch64 installation on VMware Fusion with UEFI Secure Boot, custom IncusOS keys, and a vTPM. This Mac has Fusion 25.0.0, 128 GiB RAM, 251 GiB free disk, and Apple reports nested virtualization support.
 Decision: use a local Fusion IncusOS VM first to prove reproducible boot, Incus application containers, vTPM `/dev/tpmrm0` passthrough, and host-side SPIRE plumbing. Treat it as a software-TPM functional lab, not proof of physical TPM security. Validate nested Incus VMs explicitly; if Fusion does not expose nested virtualization, use a separate Apple Virtualization Framework Linux VM for guest/nested SPIRE work. Final `tpm_devid` claims still require a bare-metal TPM 2.0 machine.
+
+## 2026-08-15 19:15 — Local control CLIs enabled
+Fusion was updated to 26.0.0/build 25388279. Exposed `vmcli`, `vmrun`, `vmware-vdiskmanager`, and `ovftool` through `~/.local/bin`; all resolve against the Fusion 26 installation. The local Incus 7.2 client already has a TLS client certificate at `~/.config/incus/client.crt`, ready to embed in the IncusOS install seed and use for the future `incusos-spike` remote.

@@ -1,0 +1,63 @@
+# SPIRE Server configuration — incusos-spire spike, phase P2.
+# Spike-only: the server runs on the same host it attests. This is a spike
+# convenience, not an architecture claim. Production topology must separate them.
+
+server {
+    bind_address = "0.0.0.0"
+    bind_port    = "8081"
+
+    trust_domain = "spike.incus.internal"
+    data_dir     = "/spike/data"
+
+    log_level = "DEBUG"
+
+    # Short-lived material keeps rotation observable inside a spike window.
+    ca_ttl                = "24h"
+    default_x509_svid_ttl = "1h"
+    default_jwt_svid_ttl  = "5m"
+}
+
+plugins {
+    DataStore "sql" {
+        plugin_data {
+            database_type     = "sqlite3"
+            connection_string = "/spike/data/datastore.sqlite3"
+        }
+    }
+
+    # Disk key manager so the server CA survives container restart and host reboot.
+    KeyManager "disk" {
+        plugin_data {
+            keys_path = "/spike/data/keys.json"
+        }
+    }
+
+    # Host identity path under test (P3 critical gate).
+    #   devid_ca_path       -> spike root CA from P1
+    #   endorsement_ca_path -> Nuvoton TPM Root CA 1110, confirmed in P0
+    NodeAttestor "tpm_devid" {
+        plugin_data {
+            devid_ca_path       = "/spike/conf/devid-ca.pem"
+            endorsement_ca_path = "/spike/conf/endorsement-ca.pem"
+        }
+    }
+
+    # Guest identity path, configured now but unused until P9.
+    # mode = "spiffe" validates against this server's own trust bundle, so no
+    # ca_bundle_path is required. svid_prefix and agent_path_template are left at
+    # their documented defaults: "/spire-exchange" and
+    # "{{ .PluginName }}/{{ .SVIDPathTrimmed }}".
+    NodeAttestor "x509pop" {
+        plugin_data {
+            mode = "spiffe"
+        }
+    }
+}
+
+health_checks {
+    listener_enabled = true
+    bind_address     = "0.0.0.0"
+    bind_port        = "8080"
+    live_path        = "/live"
+    ready_path       = "/ready"
+}

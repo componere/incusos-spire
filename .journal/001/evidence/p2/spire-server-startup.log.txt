@@ -1,0 +1,31 @@
+[33mWARN[0m[0000] Current umask 0022 is too permissive; setting umask 0027 
+[36mINFO[0m[0000] Configured                                    [36madmin_ids[0m="[]" [36mdata_dir[0m=/spike/data [36mlaunch_log_level[0m=debug [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Opening SQL database                          [36mdb_type[0m=sqlite3 [36msubsystem_name[0m=sql
+[37mDEBU[0m[0000] Code and DB schema versions are the same. No migration needed  [37mschema[0m=25 [37msubsystem_name[0m=sql [37mversion_info[0m=1.15.2
+[36mINFO[0m[0000] Connected to SQL database                     [36mread_only[0m=false [36msubsystem_name[0m=sql [36mtype[0m=sqlite3 [36mversion[0m=3.53.2
+[36mINFO[0m[0000] Configured DataStore                          [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=x509pop [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=x509pop [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] Loading journal from datastore                [37msubsystem_name[0m=ca_manager
+[37mDEBU[0m[0000] Found a CA journal record that matches with a local X509 authority ID  [37mca_journal_id[0m=1 [37mlocal_authority_id[0m=bb360028cd05a378d3ed0ef4fac03f6fb97d59d8 [37msubsystem_name[0m=ca_manager
+[36mINFO[0m[0000] Journal loaded                                [36mjwt_keys[0m=1 [36msubsystem_name[0m=ca_manager [36mwit_keys[0m=0 [36mx509_cas[0m=1
+[36mINFO[0m[0000] X509 CA activated                             [36mexpiration[0m="2026-08-17 22:04:03 +0000 UTC" [36missued_at[0m="2026-08-16 22:04:03 +0000 UTC" [36mlocal_authority_id[0m=bb360028cd05a378d3ed0ef4fac03f6fb97d59d8 [36mslot[0m=A [36msubsystem_name[0m=ca_manager [36mupstream_authority_id[0m=
+[37mDEBU[0m[0000] Successfully stored CA journal entry in datastore  [37mca_journal_id[0m=1 [37mlocal_authority_id[0m=bb360028cd05a378d3ed0ef4fac03f6fb97d59d8 [37msubsystem_name[0m=ca_manager
+[37mDEBU[0m[0000] Successfully rotated X.509 CA                 [37msubsystem_name[0m=ca_manager [37mtrust_domain_id[0m="spiffe://spike.incus.internal" [37mttl[0m=86133.415219887
+[36mINFO[0m[0000] JWT key activated                             [36mexpiration[0m="2026-08-17 22:04:03 +0000 UTC" [36missued_at[0m="2026-08-16 22:04:03 +0000 UTC" [36mlocal_authority_id[0m=jRTMx4I0fHSvXeEWWcJwhsthNdfUJ4sk [36mslot[0m=A [36msubsystem_name[0m=ca_manager
+[37mDEBU[0m[0000] Successfully stored CA journal entry in datastore  [37mca_journal_id[0m=1 [37mlocal_authority_id[0m=bb360028cd05a378d3ed0ef4fac03f6fb97d59d8 [37msubsystem_name[0m=ca_manager
+[37mDEBU[0m[0000] Rotating server SVID                          [37msubsystem_name[0m=svid_rotator
+[37mDEBU[0m[0000] Signed X509 SVID                              [37mexpiration[0m="2026-08-16T23:08:29Z" [37mspiffe_id[0m="spiffe://spike.incus.internal/spire/server" [37msubsystem_name[0m=svid_rotator
+[36mINFO[0m[0000] Building in-memory entry cache                [36msubsystem_name[0m=endpoints
+[36mINFO[0m[0000] Completed building in-memory entry cache      [36msubsystem_name[0m=endpoints
+[36mINFO[0m[0000] Logger service configured                     [36mlaunch_log_level[0m=debug
+[37mDEBU[0m[0000] Initializing API endpoints                    [37msubsystem_name[0m=endpoints
+[36mINFO[0m[0000] Starting Server APIs                          [36maddress[0m="[::]:8081" [36mnetwork[0m=tcp [36msubsystem_name[0m=endpoints
+[36mINFO[0m[0000] Starting Server APIs                          [36maddress[0m=/tmp/spire-server/private/api.sock [36mnetwork[0m=unix [36msubsystem_name[0m=endpoints
+[37mDEBU[0m[0000] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0000] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+

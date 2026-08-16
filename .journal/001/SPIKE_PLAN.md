@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** P0 passed (G0) · P1 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`evidence/p0/EVIDENCE.md`](evidence/p0/EVIDENCE.md), [`evidence/p1/EVIDENCE.md`](evidence/p1/EVIDENCE.md)
+**Session:** 001 · **Status:** P0 passed (G0) · P1 passed · P2 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`evidence/p0`](evidence/p0/EVIDENCE.md), [`evidence/p1`](evidence/p1/EVIDENCE.md), [`evidence/p2`](evidence/p2/EVIDENCE.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -397,6 +397,10 @@ Recorded objects (append at creation time):
 | 3 | Incus volume `local/spike-spire-agent-state` | P1 | Holds the DevID blob triplet; consumed by P3 |
 | 4 | Incus volume `local/spike-ca-state` | P1 | Spike root and DevID issuing CA keys; needed by P3 negative case (b) |
 | 6 | TPM objects | P1 | **None created.** H4 held; P11 diff must stay empty |
+| 4 | `spire-server` container (image `cc908044…`, `ghcr.io/spiffe/spire-server:1.15.2` amd64 `sha256:410c624a…`) | P2 | P11 |
+| 4 | Incus volume `local/spike-spire-server-state` | P2 | Datastore, CA keys, config |
+| 5 | `spike-probe` utility container | P2 | Network probe for distroless services; used by P3–P10 |
+| 5 | Host images `cc908044…` (spire-server), `f005c3b8…` (debian trixie) | P2 | Remove in P11 |
 
 ## Appendix F — Primary References
 

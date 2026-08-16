@@ -1,0 +1,88 @@
+[
+  {
+    "name": "spike-probe",
+    "type": "container",
+    "config": {},
+    "used_by": [
+      "/1.0/instances/spike-probe"
+    ]
+  },
+  {
+    "name": "spire-server",
+    "type": "container",
+    "config": {},
+    "used_by": [
+      "/1.0/instances/spire-server"
+    ]
+  },
+  {
+    "name": "backups",
+    "type": "custom",
+    "config": {},
+    "used_by": [
+      "/1.0#storage.backups_volume"
+    ]
+  },
+  {
+    "name": "images",
+    "type": "custom",
+    "config": {},
+    "used_by": [
+      "/1.0#storage.images_volume"
+    ]
+  },
+  {
+    "name": "logs",
+    "type": "custom",
+    "config": {},
+    "used_by": [
+      "/1.0#storage.logs_volume"
+    ]
+  },
+  {
+    "name": "spike-ca-state",
+    "type": "custom",
+    "config": {
+      "volatile.idmap.last": "[{\"Isuid\":true,\"Isgid\":false,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000},{\"Isuid\":false,\"Isgid\":true,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000}]",
+      "volatile.idmap.next": "[{\"Isuid\":true,\"Isgid\":false,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000},{\"Isuid\":false,\"Isgid\":true,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000}]"
+    },
+    "used_by": []
+  },
+  {
+    "name": "spike-spire-agent-state",
+    "type": "custom",
+    "config": {
+      "volatile.idmap.last": "[{\"Isuid\":true,\"Isgid\":false,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000},{\"Isuid\":false,\"Isgid\":true,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000}]",
+      "volatile.idmap.next": "[{\"Isuid\":true,\"Isgid\":false,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000},{\"Isuid\":false,\"Isgid\":true,\"Hostid\":1000000,\"Nsid\":0,\"Maprange\":1000000000}]"
+    },
+    "used_by": []
+  },
+  {
+    "name": "spike-spire-server-state",
+    "type": "custom",
+    "config": {
+      "security.shifted": "true",
+      "volatile.idmap.last": "[]",
+      "volatile.idmap.next": "[]"
+    },
+    "used_by": [
+      "/1.0/instances/spire-server"
+    ]
+  },
+  {
+    "name": "cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e",
+    "type": "image",
+    "config": {},
+    "used_by": [
+      "/1.0/images/cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e"
+    ]
+  },
+  {
+    "name": "f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16",
+    "type": "image",
+    "config": {},
+    "used_by": [
+      "/1.0/images/f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16"
+    ]
+  }
+]

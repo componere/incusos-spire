@@ -1,0 +1,66 @@
+[
+  {
+    "auto_update": true,
+    "properties": {
+      "architecture": "x86_64",
+      "description": "ghcr.io/spiffe/spire-server (OCI)",
+      "id": "spiffe/spire-server:1.15.2",
+      "type": "oci"
+    },
+    "public": false,
+    "expires_at": "0001-01-01T00:00:00Z",
+    "profiles": [
+      "default"
+    ],
+    "aliases": [],
+    "architecture": "x86_64",
+    "cached": true,
+    "filename": "",
+    "fingerprint": "cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e",
+    "size": 43074471,
+    "update_source": {
+      "alias": "spiffe/spire-server:1.15.2",
+      "certificate": "",
+      "protocol": "oci",
+      "server": "https://ghcr.io",
+      "image_type": ""
+    },
+    "type": "container",
+    "created_at": "2026-07-09T19:25:42.015720388Z",
+    "last_used_at": "2026-08-16T22:03:58.317864772Z",
+    "uploaded_at": "2026-08-16T22:03:58.306235904Z",
+    "project": "default"
+  },
+  {
+    "auto_update": true,
+    "properties": {
+      "architecture": "x86_64",
+      "description": "docker.io/library/debian (OCI)",
+      "id": "debian:trixie",
+      "type": "oci"
+    },
+    "public": false,
+    "expires_at": "0001-01-01T00:00:00Z",
+    "profiles": [
+      "default"
+    ],
+    "aliases": [],
+    "architecture": "x86_64",
+    "cached": true,
+    "filename": "",
+    "fingerprint": "f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16",
+    "size": 49312314,
+    "update_source": {
+      "alias": "debian:trixie",
+      "certificate": "",
+      "protocol": "oci",
+      "server": "https://docker.io",
+      "image_type": ""
+    },
+    "type": "container",
+    "created_at": "2026-08-03T00:00:00Z",
+    "last_used_at": "2026-08-16T22:04:51.814680532Z",
+    "uploaded_at": "2026-08-16T03:46:10.571686167Z",
+    "project": "default"
+  }
+]

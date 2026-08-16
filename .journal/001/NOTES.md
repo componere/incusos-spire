@@ -47,3 +47,6 @@ Correction to the P0 evidence: the initial unfiltered `incus admin os system sec
 
 ## 2026-08-15 21:10 — Recovery readiness passed; TPM counter still blocks G0
 The operator confirmed that the current IncusOS system and `local` pool recovery material is saved in 1Password; no value was sent through chat or written to the repository. Recreated a temporary TPM inspection container and ran only `tpm2_getcap properties-variable`. The dictionary-attack counter remains `8/10` with `inLockout=false`, so G0 remains closed. Deleted the temporary container and confirmed the IncusOS workload list is empty.
+
+## 2026-08-16 08:07 — TPM counter recovered to 2/10
+Rechecked the physical TPM with two consecutive read-only `tpm2_getcap properties-variable` calls. Both reported a dictionary-attack counter of `2/10`, down naturally from `8/10`, with `inLockout=false`. No authentication or TPM mutation command ran. Deleted the temporary inspection container and confirmed the IncusOS workload list is empty. G0 remains closed until two consecutive reads report zero.

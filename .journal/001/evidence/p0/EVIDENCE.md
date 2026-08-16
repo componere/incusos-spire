@@ -17,14 +17,14 @@ The temporary container was deleted. The host workload list is empty again.
 | Recovery material stored outside repositories | PASS | On 2026-08-15, the operator confirmed the current IncusOS system and `local` pool recovery material was saved in 1Password. No value was provided in chat or written to the repository. |
 | IncusOS Secure Boot and TPM health | PASS | `secure_boot_enabled=true`; `tpm_status=ok`. |
 | IncusOS system trust and encrypted-volume unlock | PASS | `system_state_is_trusted=true`; root and swap are `unlocked (TPM)`. |
-| TPM hierarchy and dictionary-attack state | **FAIL** | `ownerAuthSet=0`, `endorsementAuthSet=0`, `lockoutAuthSet=0`, `inLockout=0`, but `TPM2_PT_LOCKOUT_COUNTER=8` with `TPM2_PT_MAX_AUTH_FAIL=10`. P0 requires a zero counter. |
+| TPM hierarchy and dictionary-attack state | **FAIL** | `ownerAuthSet=0`, `endorsementAuthSet=0`, `lockoutAuthSet=0`, `inLockout=0`, but the latest `TPM2_PT_LOCKOUT_COUNTER=2` with `TPM2_PT_MAX_AUTH_FAIL=10`. P0 requires a zero counter. |
 | TPM persistent and NV namespaces inventoried | PASS | One persistent object and two TCG EK certificate indices found; all are protected from spike use. |
 | Endorsement certificate chain discoverable | PASS | RSA and ECC EK certificates both validate directly to the official Nuvoton TPM Root CA 1110. |
 | Cleanup and unchanged host security state | PASS | Inspection container deleted; empty workload list; final IncusOS security state matches the initial state. |
 
 One blocker keeps G0 closed:
 
-1. The physical TPM dictionary-attack counter remains `8/10`. No attempt was made to clear or reset it.
+1. The physical TPM dictionary-attack counter remains `2/10`. No attempt was made to clear or reset it.
 
 ## Recovery readiness
 
@@ -248,6 +248,14 @@ The EK indices are `NO_DA`, owner auth is unset, and each certificate was read o
 - `TPM2_PT_LOCKOUT_COUNTER` remained `0x8`; `TPM2_PT_MAX_AUTH_FAIL` remained `0xA`; `inLockout` remained false.
 - The temporary container was deleted and the host workload list returned to empty.
 - Recovery readiness now passes. G0 remains **NO-GO** solely because the dictionary-attack counter is nonzero.
+
+## G0 recheck — 2026-08-16 08:07 PDT
+
+- Two consecutive read-only `tpm2_getcap properties-variable` calls reported `TPM2_PT_LOCKOUT_COUNTER=0x2`.
+- `TPM2_PT_MAX_AUTH_FAIL` remained `0xA`; `inLockout` remained false.
+- The counter recovered naturally from `8` to `2`; no authentication or TPM mutation command ran.
+- The temporary inspection container was deleted and the host workload list returned to empty.
+- G0 remains **NO-GO** until two consecutive reads report a zero counter.
 
 ## Cleanup
 

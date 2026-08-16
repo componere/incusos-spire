@@ -1,0 +1,48 @@
+architecture: x86_64
+config:
+  environment.PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  environment.TERM: xterm
+  image.architecture: x86_64
+  image.description: ghcr.io/spiffe/spire-agent (OCI)
+  image.id: spiffe/spire-agent:1.15.2
+  image.type: oci
+  oci.cwd: /opt/spire
+  oci.entrypoint: /opt/spire/bin/spire-agent run -config /spike/conf/agent.conf
+  oci.gid: "0"
+  oci.uid: "0"
+  volatile.base_image: a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622
+  volatile.cloud-init.instance-id: 458941c3-9e4b-4cba-bc5f-6d65f46e1a92
+  volatile.container.oci: "true"
+  volatile.eth0.host_name: veth8fc26da4
+  volatile.eth0.hwaddr: 10:66:6a:e4:92:6c
+  volatile.idmap.base: "0"
+  volatile.idmap.current: '[{"Isuid":true,"Isgid":false,"Hostid":1000000,"Nsid":0,"Maprange":1000000000},{"Isuid":false,"Isgid":true,"Hostid":1000000,"Nsid":0,"Maprange":1000000000}]'
+  volatile.idmap.next: '[{"Isuid":true,"Isgid":false,"Hostid":1000000,"Nsid":0,"Maprange":1000000000},{"Isuid":false,"Isgid":true,"Hostid":1000000,"Nsid":0,"Maprange":1000000000}]'
+  volatile.last_state.idmap: '[]'
+  volatile.last_state.power: RUNNING
+  volatile.last_state.ready: "false"
+  volatile.uuid: 45418cd0-e40f-4b58-a77c-ef141cb53439
+  volatile.uuid.generation: 45418cd0-e40f-4b58-a77c-ef141cb53439
+devices:
+  eth0:
+    name: eth0
+    network: incusbr0
+    type: nic
+  root:
+    path: /
+    pool: local
+    type: disk
+  state:
+    path: /spike
+    pool: local
+    source: spike-spire-agent-state
+    type: disk
+  tpm:
+    path: /dev/tpmrm0
+    source: /dev/tpmrm0
+    type: unix-char
+ephemeral: false
+profiles:
+  - default
+stateful: false
+description: ""

@@ -1,0 +1,22 @@
+[33mWARN[0m[0000] Current umask 0022 is too permissive; setting umask 0027 
+[36mINFO[0m[0000] Starting agent                                [36mdata_dir[0m=/spike/negatives/case-a/data [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0000] No pre-existing agent SVID found. Will perform node attestation  [37msubsystem_name[0m=attestor
+[36mINFO[0m[0000] SVID is not found. Starting node attestation  [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0008] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0008] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check has failed. Starting up still.   [33mcheck[0m=agent [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check failed                           [33mcheck[0m=agent [33mdetails[0m="{0x2a506ed00028 true false {} {workload api is unavailable}}" [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[36mINFO[0m[0029] Trust Bundle and Server don't agree, bootstrapping again 
+[33mWARN[0m[0029] Failed to retrieve attestation result         [33merror[0m="failed to receive attestation response: rpc error: code = InvalidArgument desc = nodeattestor(tpm_devid): unable to verify DevID signature: verification failed: x509: certificate signed by unknown authority" [33mretry_interval[0m=5.003563244s
+[36mINFO[0m[0034] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0034] No pre-existing agent SVID found. Will perform node attestation  [37msubsystem_name[0m=attestor
+[33mWARN[0m[0034] Keys recovered, but no SVID found. Generating new keypair  [33msubsystem_name[0m=attestor
+[36mINFO[0m[0034] SVID is not found. Starting node attestation  [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+

@@ -1,0 +1,69 @@
+#!/bin/bash
+# P3 negative case (b), continued: recover the foreign DevID public key and have the
+# genuine spike DevID CA certify it. The software TPM ran out of transient object
+# slots on the first attempt, so flush before reloading.
+set -euo pipefail
+umask 077
+
+N=/state/negatives/case-b
+export TPM2TOOLS_TCTI="swtpm:host=127.0.0.1,port=2321"
+
+pgrep -f 'swtpm socket --tpm2' >/dev/null || {
+  swtpm socket --tpm2 --tpmstate dir=/tmp/swtpm-state \
+    --server type=tcp,port=2321,bindaddr=127.0.0.1 \
+    --ctrl type=tcp,port=2322,bindaddr=127.0.0.1 \
+    --flags not-need-init,startup-clear --daemon
+  sleep 2
+}
+
+tpm2_flushcontext -t >/dev/null 2>&1 || true
+tpm2_flushcontext -l >/dev/null 2>&1 || true
+tpm2_flushcontext -s >/dev/null 2>&1 || true
+
+tpm2_load -C /tmp/foreign-srk.ctx \
+  -u /tmp/foreign-devid.pub.tpm2b -r /tmp/foreign-devid.priv.tpm2b \
+  -c /tmp/foreign-devid2.ctx >/dev/null
+tpm2_readpublic -c /tmp/foreign-devid2.ctx -f pem -o "$N/foreign-devid-pub.pem" >/dev/null
+echo "recovered foreign DevID public key:"
+openssl pkey -pubin -in "$N/foreign-devid-pub.pem" -noout -text_pub | head -2 | sed 's/^/  /'
+
+openssl req -new -newkey rsa:2048 -nodes -keyout /tmp/dummy-b.key -out /tmp/dummy-b.csr \
+  -subj '/O=incusos-spire spike/CN=spike-host-devid' 2>/dev/null
+
+cat > /tmp/leaf-b.ext <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+EOF
+
+openssl x509 -req -in /tmp/dummy-b.csr -force_pubkey "$N/foreign-devid-pub.pem" \
+  -CA /ca/devid-ca/spike-devid-ca.pem -CAkey /ca/devid-ca/spike-devid-ca.key \
+  -CAcreateserial -days 30 -sha256 -extfile /tmp/leaf-b.ext \
+  -out /tmp/foreign-leaf.pem 2>/dev/null
+
+cat /tmp/foreign-leaf.pem /ca/devid-ca/spike-devid-ca.pem > "$N/devid.pem"
+
+echo "case-b certificate, issued by the REAL spike DevID CA:"
+openssl x509 -in "$N/devid.pem" -noout -subject -issuer -serial -fingerprint -sha256 | sed 's/^/  /'
+echo "case-b chain verifies against the real spike root:"
+openssl verify -CAfile /ca/root/spike-root-ca.pem -untrusted /ca/devid-ca/spike-devid-ca.pem \
+  "$N/devid.pem" | sed 's/^/  /'
+
+echo "case-b key differs from the real host DevID key:"
+if diff <(openssl x509 -in "$N/devid.pem" -pubkey -noout) \
+        <(openssl x509 -in /state/devid.pem -pubkey -noout) >/dev/null; then
+  echo "  SAME KEY - test invalid"; exit 1
+else
+  echo "  yes, different key"
+fi
+
+pkill -f 'swtpm socket --tpm2' || true
+rm -rf /tmp/swtpm-state /tmp/foreign-srk.ctx /tmp/foreign-devid*.ctx \
+       /tmp/foreign-devid.pub.tpm2b /tmp/foreign-devid.priv.tpm2b \
+       /tmp/dummy-b.key /tmp/dummy-b.csr /tmp/leaf-b.ext /tmp/foreign-leaf.pem
+
+chown -R 0:0 "$N"
+chmod 0644 "$N"/devid.pem "$N"/devid.pub.blob "$N"/devid.priv.blob
+ls -l "$N"
+echo "case-b artifacts ready"

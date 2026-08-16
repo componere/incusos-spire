@@ -1,0 +1,13 @@
+Found an attested agent given its SPIFFE ID
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-16 23:50:37 +0000 UTC
+Serial number     : 226467144309328771049194816124793378027
+Can re-attest     : true
+Agent version     : 1.15.2
+
+Selectors         : tpm_devid:ca:fingerprint:2e6938a538745fd341bea0267bdbea2723fcd035
+Selectors         : tpm_devid:ca:fingerprint:7b135f9064faa41a9687165007807c073689bc79
+Selectors         : tpm_devid:issuer:cn:spike DevID issuing CA
+Selectors         : tpm_devid:subject:cn:spike-host-devid

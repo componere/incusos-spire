@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** P0 passed (G0) · P1 passed · P2 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`evidence/p0`](evidence/p0/EVIDENCE.md), [`evidence/p1`](evidence/p1/EVIDENCE.md), [`evidence/p2`](evidence/p2/EVIDENCE.md)
+**Session:** 001 · **Status:** G0 passed · P1 passed · P2 passed · **P3 passed / G3 PASSED 2026-08-16** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -401,6 +401,9 @@ Recorded objects (append at creation time):
 | 4 | Incus volume `local/spike-spire-server-state` | P2 | Datastore, CA keys, config |
 | 5 | `spike-probe` utility container | P2 | Network probe for distroless services; used by P3–P10 |
 | 5 | Host images `cc908044…` (spire-server), `f005c3b8…` (debian trixie) | P2 | Remove in P11 |
+| 2 | `spire-agent` container (image amd64 `sha256:5fbe8ac3…`) | P3 | Remove after guest phases |
+| 3 | `/spike/negatives/**` on `spike-spire-agent-state` (rogue CA keys, foreign-TPM triplet, tampered chain) | P3 | Retained as evidence; removed with the volume |
+| 5 | `spike-p3-stage` container (stopped, TPM detached) | P3 | Tooling host for later phases |
 
 ## Appendix F — Primary References
 

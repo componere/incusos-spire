@@ -1,0 +1,49 @@
+# SPIRE Agent configuration — incusos-spire spike, phase P3.
+# Host identity comes from the physical TPM via tpm_devid node attestation.
+
+agent {
+    data_dir  = "/spike/agent-data"
+    log_level = "DEBUG"
+
+    server_address = "10.55.156.67"
+    server_port    = "8081"
+
+    trust_domain      = "spike.incus.internal"
+    trust_bundle_path = "/spike/conf/agent-trust-bundle.pem"
+
+    # Socket lives on the shared spike volume so P4 workloads can reach it
+    # without widening network exposure.
+    socket_path = "/spike/run/api.sock"
+}
+
+plugins {
+    # Artifacts provisioned in P1. Hierarchy passwords stay empty: P0 observed
+    # ownerAuthSet, endorsementAuthSet, and lockoutAuthSet all unset.
+    NodeAttestor "tpm_devid" {
+        plugin_data {
+            tpm_device_path = "/dev/tpmrm0"
+            devid_cert_path = "/spike/devid.pem"
+            devid_priv_path = "/spike/devid.priv.blob"
+            devid_pub_path  = "/spike/devid.pub.blob"
+        }
+    }
+
+    # Disk key manager so the agent SVID key survives restart and host reboot.
+    KeyManager "disk" {
+        plugin_data {
+            directory = "/spike/agent-data"
+        }
+    }
+
+    WorkloadAttestor "unix" {
+        plugin_data {}
+    }
+}
+
+health_checks {
+    listener_enabled = true
+    bind_address     = "0.0.0.0"
+    bind_port        = "8080"
+    live_path        = "/live"
+    ready_path       = "/ready"
+}

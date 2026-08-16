@@ -1,0 +1,23 @@
+[33mWARN[0m[0000] Current umask 0022 is too permissive; setting umask 0027 
+[36mINFO[0m[0000] Starting agent                                [36mdata_dir[0m=/spike/agent-data [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0000] No pre-existing agent SVID found. Will perform node attestation  [37msubsystem_name[0m=attestor
+[33mWARN[0m[0000] Keys recovered, but no SVID found. Generating new keypair  [33msubsystem_name[0m=attestor
+[36mINFO[0m[0000] SVID is not found. Starting node attestation  [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0008] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0008] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check has failed. Starting up still.   [33mcheck[0m=agent [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check failed                           [33mcheck[0m=agent [33mdetails[0m="{0x1b45462be668 true false {} {workload api is unavailable}}" [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[36mINFO[0m[0033] Node attestation was successful               [36mreattestable[0m=true [36mspiffe_id[0m="spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0" [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0033] Success after 33.477260869s attempts=1        [36mLogger[0m=TrustBundleSources
+[36mINFO[0m[0033] Setting use.                                  [36mLogger[0m=TrustBundleSources
+[37mDEBU[0m[0033] Bundle added                                  [37msubsystem_name[0m=svid_store_cache [37mtrust_domain_id[0m=spike.incus.internal
+[36mINFO[0m[0033] Starting Workload and SDS APIs                [36maddress[0m=/spike/run/api.sock [36mnetwork[0m=unix [36msubsystem_name[0m=endpoints
+[36mINFO[0m[0034] Health check recovered                        [36mcheck[0m=agent [36mdetails[0m="{0x1b45462be668 true true {} {}}" [36mduration[0m=26.033650176 [36merror[0m="subsystem is not ready" [36mfailures[0m=26 [36msubsystem_name[0m=health
+

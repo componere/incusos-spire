@@ -1,0 +1,12 @@
+- 0x81000001
+- 0x1C00002
+- 0x1C0000A
+  ownerAuthSet:              0
+  endorsementAuthSet:        0
+  lockoutAuthSet:            0
+  inLockout:                 0
+TPM2_PT_HR_NV_INDEX: 0x2
+TPM2_PT_HR_PERSISTENT: 0x1
+TPM2_PT_NV_COUNTERS: 0x0
+TPM2_PT_LOCKOUT_COUNTER: 0x0
+TPM2_PT_MAX_AUTH_FAIL: 0xA

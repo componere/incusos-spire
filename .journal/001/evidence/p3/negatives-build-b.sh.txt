@@ -1,0 +1,85 @@
+#!/bin/bash
+# P3 negative case (b): build a DevID triplet on a DIFFERENT (software) TPM and have
+# the genuine spike DevID CA certify it, so the only thing that differs from the real
+# host credential is residency.
+set -euo pipefail
+umask 077
+
+N=/state/negatives/case-b
+mkdir -p "$N" /tmp/swtpm-state
+
+# --- software TPM, entirely separate from the host TPM ---
+swtpm socket --tpm2 \
+  --tpmstate dir=/tmp/swtpm-state \
+  --server type=tcp,port=2321,bindaddr=127.0.0.1 \
+  --ctrl type=tcp,port=2322,bindaddr=127.0.0.1 \
+  --flags not-need-init,startup-clear \
+  --daemon
+sleep 2
+
+export TPM2TOOLS_TCTI="swtpm:host=127.0.0.1,port=2321"
+echo "software TPM manufacturer:"
+tpm2_getcap properties-fixed | grep -A 2 TPM2_PT_MANUFACTURER | sed 's/^/  /'
+
+# --- SRK using SPIRE's H-1 high-range template ---
+tpm2_createprimary -C o -g sha256 -G rsa2048 \
+  -a 'fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt' \
+  -c /tmp/foreign-srk.ctx >/dev/null
+
+# --- DevID signing key with the same template shape used in P1 ---
+tpm2_create -C /tmp/foreign-srk.ctx -g sha256 -G rsa2048:rsassa-sha256 \
+  -a 'fixedtpm|fixedparent|sensitivedataorigin|userwithauth|sign' \
+  -u /tmp/foreign-devid.pub.tpm2b -r /tmp/foreign-devid.priv.tpm2b \
+  -c /tmp/foreign-devid.ctx >/dev/null
+
+# tpm2-tools writes TPM2B structures (2-byte size prefix); SPIRE reads the raw
+# contents, so strip the prefix. This mirrors the P1 format finding.
+tail -c +3 /tmp/foreign-devid.pub.tpm2b  > "$N/devid.pub.blob"
+tail -c +3 /tmp/foreign-devid.priv.tpm2b > "$N/devid.priv.blob"
+
+echo "blob sizes (real P1 pub blob was 280 bytes, priv 190):"
+stat -c '  %n %s bytes' "$N/devid.pub.blob" "$N/devid.priv.blob"
+
+# --- certify the foreign key with the GENUINE spike DevID issuing CA ---
+tpm2_readpublic -c /tmp/foreign-devid.ctx -f pem -o "$N/foreign-devid-pub.pem" >/dev/null
+
+openssl req -new -newkey rsa:2048 -nodes -keyout /tmp/dummy-b.key -out /tmp/dummy-b.csr \
+  -subj '/O=incusos-spire spike/CN=spike-host-devid' 2>/dev/null
+
+cat > /tmp/leaf-b.ext <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+EOF
+
+openssl x509 -req -in /tmp/dummy-b.csr -force_pubkey "$N/foreign-devid-pub.pem" \
+  -CA /ca/devid-ca/spike-devid-ca.pem -CAkey /ca/devid-ca/spike-devid-ca.key \
+  -CAcreateserial -days 30 -sha256 -extfile /tmp/leaf-b.ext \
+  -out /tmp/foreign-leaf.pem 2>/dev/null
+
+cat /tmp/foreign-leaf.pem /ca/devid-ca/spike-devid-ca.pem > "$N/devid.pem"
+rm -f /tmp/dummy-b.key /tmp/dummy-b.csr /tmp/leaf-b.ext /tmp/foreign-leaf.pem
+
+echo "case-b certificate (issued by the real spike DevID CA):"
+openssl x509 -in "$N/devid.pem" -noout -subject -issuer -serial | sed 's/^/  /'
+echo "case-b chain verifies against the real spike root:"
+openssl verify -CAfile /ca/root/spike-root-ca.pem -untrusted /ca/devid-ca/spike-devid-ca.pem \
+  "$N/devid.pem" | sed 's/^/  /'
+
+echo "case-b public key differs from the real host DevID key:"
+if diff <(openssl x509 -in "$N/devid.pem" -pubkey -noout) \
+        <(openssl x509 -in /state/devid.pem -pubkey -noout) >/dev/null; then
+  echo "  SAME KEY - test would be invalid"; exit 1
+else
+  echo "  yes, different key"
+fi
+
+# stop the software TPM; its state is disposable
+pkill -f 'swtpm socket --tpm2' || true
+rm -rf /tmp/swtpm-state /tmp/foreign-srk.ctx /tmp/foreign-devid.ctx \
+       /tmp/foreign-devid.pub.tpm2b /tmp/foreign-devid.priv.tpm2b
+
+chown -R 0:0 "$N"
+chmod 0644 "$N"/devid.pem "$N"/devid.pub.blob "$N"/devid.priv.blob
+echo "case-b artifacts ready"

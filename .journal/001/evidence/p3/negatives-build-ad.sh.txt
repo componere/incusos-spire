@@ -1,0 +1,89 @@
+#!/bin/bash
+# P3 negative cases (a) and (d): build throwaway rogue-CA and tampered artifacts.
+# Runs inside spike-p3-stage with /state = spike-spire-agent-state, /ca = spike-ca-state.
+set -euo pipefail
+umask 077
+
+N=/state/negatives
+mkdir -p "$N/case-a" "$N/case-d" "$N/rogue-ca"
+
+# --- Rogue CA: structurally valid, deliberately NOT in the server's devid_ca_path ---
+openssl req -x509 -newkey rsa:2048 -sha256 -days 30 -nodes \
+  -keyout "$N/rogue-ca/rogue-root.key" -out "$N/rogue-ca/rogue-root.pem" \
+  -subj '/O=incusos-spire spike NEGATIVE/CN=rogue root CA' \
+  -addext 'basicConstraints=critical,CA:TRUE,pathlen:1' \
+  -addext 'keyUsage=critical,digitalSignature,cRLSign,keyCertSign' 2>/dev/null
+
+openssl req -new -newkey rsa:2048 -sha256 -nodes \
+  -keyout "$N/rogue-ca/rogue-issuing.key" -out "$N/rogue-ca/rogue-issuing.csr" \
+  -subj '/O=incusos-spire spike NEGATIVE/CN=rogue DevID issuing CA' 2>/dev/null
+
+cat > "$N/rogue-ca/ca.ext" <<'EOF'
+basicConstraints=critical,CA:TRUE,pathlen:0
+keyUsage=critical,digitalSignature,cRLSign,keyCertSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+EOF
+
+openssl x509 -req -in "$N/rogue-ca/rogue-issuing.csr" \
+  -CA "$N/rogue-ca/rogue-root.pem" -CAkey "$N/rogue-ca/rogue-root.key" \
+  -CAcreateserial -days 30 -sha256 -extfile "$N/rogue-ca/ca.ext" \
+  -out "$N/rogue-ca/rogue-issuing.pem" 2>/dev/null
+
+# --- Case (a): the real TPM DevID public key, certified by the rogue CA ---
+# The private key still lives in the TPM, so proof-of-possession will succeed and
+# the failure must come from chain-of-trust verification alone.
+openssl x509 -in /state/devid.pem -pubkey -noout > "$N/case-a/real-devid-pub.pem"
+
+# openssl needs some CSR to sign; -force_pubkey swaps in the TPM key's public half.
+openssl req -new -newkey rsa:2048 -nodes -keyout /tmp/dummy.key -out /tmp/dummy.csr \
+  -subj '/O=incusos-spire spike NEGATIVE/CN=spike-host-devid' 2>/dev/null
+
+cat > "$N/case-a/leaf.ext" <<'EOF'
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+EOF
+
+openssl x509 -req -in /tmp/dummy.csr -force_pubkey "$N/case-a/real-devid-pub.pem" \
+  -CA "$N/rogue-ca/rogue-issuing.pem" -CAkey "$N/rogue-ca/rogue-issuing.key" \
+  -CAcreateserial -days 30 -sha256 -extfile "$N/case-a/leaf.ext" \
+  -out "$N/case-a/rogue-leaf.pem" 2>/dev/null
+
+cat "$N/case-a/rogue-leaf.pem" "$N/rogue-ca/rogue-issuing.pem" > "$N/case-a/devid.pem"
+rm -f /tmp/dummy.key /tmp/dummy.csr
+
+echo "case-a leaf public key matches the real TPM DevID key:"
+diff <(openssl x509 -in "$N/case-a/devid.pem" -pubkey -noout) "$N/case-a/real-devid-pub.pem" >/dev/null \
+  && echo "  yes" || { echo "  NO"; exit 1; }
+openssl x509 -in "$N/case-a/devid.pem" -noout -subject -issuer -serial
+
+# --- Case (d): the genuine chain with one corrupted signature byte ---
+cp /state/devid.pem "$N/case-d/devid.pem"
+python3 - <<'PY'
+import re
+path = "/state/negatives/case-d/devid.pem"
+with open(path) as fh:
+    text = fh.read()
+blocks = re.findall(r"-----BEGIN CERTIFICATE-----\n(.*?)-----END CERTIFICATE-----", text, re.S)
+leaf = blocks[0]
+lines = leaf.strip().splitlines()
+# Corrupt one base64 character deep in the signature (last body line).
+target = lines[-2]
+swapped = "A" if target[5] != "A" else "B"
+lines[-2] = target[:5] + swapped + target[6:]
+corrupted = "\n".join(lines) + "\n"
+text = text.replace(leaf, corrupted, 1)
+with open(path, "w") as fh:
+    fh.write(text)
+print("case-d: corrupted one base64 character in the leaf certificate body")
+PY
+
+echo "case-d verification against the real spike root (expected to fail):"
+openssl verify -CAfile /ca/root/spike-root-ca.pem -untrusted /ca/devid-ca/spike-devid-ca.pem \
+  "$N/case-d/devid.pem" 2>&1 | sed 's/^/  /' || true
+
+chmod -R a+rX "$N/case-a" "$N/case-d"
+chown -R 0:0 "$N"
+echo "negative artifacts for cases a and d ready"

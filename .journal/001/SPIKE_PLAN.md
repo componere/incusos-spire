@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** G0 passed · P1 passed · P2 passed · **P3 passed / G3 PASSED 2026-08-16** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md)
+**Session:** 001 · **Status:** G0 passed · P1 · P2 · **P3 / G3 PASSED** · P4 passed 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 

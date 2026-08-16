@@ -1,0 +1,99 @@
+Received 2 svids after 1.930889ms
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:09:18 +0000 UTC
+SVID Valid Until:   2026-08-16 23:10:28 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+Received 2 svids after 22.444231209s
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:09:46 +0000 UTC
+SVID Valid Until:   2026-08-16 23:10:56 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+Received 2 svids after 25.32079215s
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:10:11 +0000 UTC
+SVID Valid Until:   2026-08-16 23:11:21 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+Received 2 svids after 29.462395641s
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:10:41 +0000 UTC
+SVID Valid Until:   2026-08-16 23:11:51 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+Received 2 svids after 24.713314675s
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:11:06 +0000 UTC
+SVID Valid Until:   2026-08-16 23:12:16 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+Received 2 svids after 29.733659763s
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:11:35 +0000 UTC
+SVID Valid Until:   2026-08-16 23:12:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+Received 2 svids after 24.559108576s
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:   2026-08-16 23:12:00 +0000 UTC
+SVID Valid Until:   2026-08-16 23:13:10 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:      spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:   2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:   2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:   2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:   2026-08-17 22:04:03 +0000 UTC
+
+[svid-watch: exited; cursor=4000]

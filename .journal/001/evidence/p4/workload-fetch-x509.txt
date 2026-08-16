@@ -1,0 +1,14 @@
+Received 2 svids after 1.483852ms
+
+SPIFFE ID:		spiffe://spike.incus.internal/spike/host-rotation-probe
+SVID Valid After:	2026-08-16 23:12:31 +0000 UTC
+SVID Valid Until:	2026-08-16 23:13:41 +0000 UTC
+CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+
+SPIFFE ID:		spiffe://spike.incus.internal/spike/host-baseline
+SVID Valid After:	2026-08-16 23:06:35 +0000 UTC
+SVID Valid Until:	2026-08-17 00:06:45 +0000 UTC
+CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+

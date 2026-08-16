@@ -1,0 +1,17 @@
+Found 2 entries
+Entry ID                : c0d211a2-a438-4c02-96c3-7b32f30e90e3
+SPIFFE ID               : spiffe://spike.incus.internal/spike/host-baseline
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : default
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6268d790-f603-4192-94f8-592f4e99b107
+SPIFFE ID               : spiffe://spike.incus.internal/spike/host-rotation-probe
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 60
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+

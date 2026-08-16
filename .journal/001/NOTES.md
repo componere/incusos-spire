@@ -35,3 +35,6 @@ Reviewed `~/code/ovh/docs/docs/runbooks/incusos-bare-metal.md` and checked the l
 
 ## 2026-08-15 20:10 — OVH KVM verified
 Created and started an empty x86_64 Incus VM on `ovh-incusos`; it reached `RUNNING` with a QEMU PID, TAP interface, and 105 MiB current memory. Deleted the capability-check VM and confirmed the remote returned to an empty workload list. This closes the Mac lab's `/dev/kvm` gap without leaving a guest image or instance behind.
+
+## 2026-08-15 20:34 — Full spike plan completed
+Delegated the end-to-end design to a planning agent with the prior evaluation, Mac evidence, live OVH facts, runbook, TPM safety invariants, and SPIRE 1.15.2 references preloaded. Reviewed and refined the result into `SPIKE_PLAN.md`. The plan gates all persistent TPM mutation behind recovery readiness and namespace inventory, proves physical `tpm_devid` before custom Broker work, separates the read-only Incus attestor identity from the bootstrap writer, treats the guest nonce honestly as a bearer credential, requires atomic single-use redemption, and covers lifecycle/adversarial cases through final teardown and go/no-go.

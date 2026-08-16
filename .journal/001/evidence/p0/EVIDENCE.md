@@ -37,7 +37,17 @@ Metadata-only checks established:
 - no drive recovery key is reported
 - Bitwarden was unlocked and searched by host name, IP address, `IncusOS`, and `OVH`; no matching record was returned
 
-No recovery-key value was printed, copied, or written to this repository or journal.
+**Correction, 2026-08-15 21:03 PDT:** The initial P0 `incus admin os system security show` invocation emitted the current system and pool recovery-key values into the harness tool output. The values were not copied into repository or journal files, but they are present in the session transcript and must be treated as exposed to that log.
+
+The live IncusOS endpoint still returns both values. The operator can capture them without terminal output by pausing any clipboard-history tool and running:
+
+```sh
+incus admin os system security show ovh-incusos: --format json \
+  | jq -c '{system_recovery_keys: .config.encryption_recovery_keys, pool_recovery_keys: .state.pool_recovery_keys}' \
+  | pbcopy
+```
+
+Paste the clipboard into the body of a Bitwarden Secure Note named `ovh-incusos recovery material`, save it, clear the clipboard with `printf '' | pbcopy`, then lock and unlock Bitwarden to prove the item is available from the vault. Do not paste either value into chat, a shell command, or a repository file.
 
 ## IncusOS baseline
 

@@ -4,16 +4,23 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/types/known/anypb"
+
 	"github.com/componere/incusos-spire/internal/attestor"
+	"github.com/componere/incusos-spire/internal/broker"
 	"github.com/componere/incusos-spire/internal/nonce"
+	incusv1alpha1 "github.com/componere/incusos-spire/proto/componere/incus/v1alpha1"
 )
 
 const (
@@ -94,7 +101,70 @@ const (
 	fieldPeerAddress = "peer_address"
 	// fieldWithdrawal names why a withdrawal did not complete.
 	fieldWithdrawal = "withdrawal"
+	// fieldFailureClass names which class of failure produced a record. It is
+	// the field that separates a burned nonce from a rejected one.
+	fieldFailureClass = "failure_class"
+	// fieldExchangeID names the SPIFFE ID of an issued exchange SVID.
+	fieldExchangeID = "exchange_spiffe_id"
+	// fieldExchangeExpiresAt names the instant an exchange SVID stops being
+	// usable for node attestation.
+	fieldExchangeExpiresAt = "exchange_expires_at"
 )
+
+// The exchange-SVID vocabulary: the reference this service submits to the
+// Broker API, the PEM types it hands the guest, and the redacted rendering of
+// the private key it must never print.
+const (
+	// referenceTypeURL is the google.protobuf.Any type URL of the workload
+	// reference this service submits. It must equal the host agent's
+	// brokers[].allowed_reference_types[].type_url and the type URL
+	// cmd/incus-attestor attests, exactly; SPIRE answers PermissionDenied for
+	// anything else.
+	referenceTypeURL = "type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference"
+	// pemTypeCertificate is the PEM block type of an X.509 certificate.
+	pemTypeCertificate = "CERTIFICATE"
+	// pemTypePrivateKey is the PEM block type of an unencrypted PKCS#8 private
+	// key, which is the form SPIRE's x509pop key_path accepts.
+	pemTypePrivateKey = "PRIVATE KEY"
+	// redactedExchangeKey is the fixed text every formatting path of an
+	// [exchangeKeyPEM] renders instead of key material.
+	redactedExchangeKey = "exchange-key(redacted)"
+)
+
+// The failure classes of the exchange-SVID fetch. They exist so an operator
+// reading the log can tell a burned nonce apart from a rejected one, and can
+// tell which side of the Broker API failed: an allowlist or registration fault
+// they must fix, or a transport fault the guest may retry after a fresh mint.
+const (
+	// classReferenceTypeDenied names a reference type outside the host agent's
+	// broker allowlist. Attestation never ran.
+	classReferenceTypeDenied = "broker_reference_type_denied"
+	// classPermissionDenied names a refusal this service cannot attribute: the
+	// allowlist, or the workload attestor's own policy after it attested.
+	classPermissionDenied = "broker_permission_denied"
+	// classInvalidRequest names a request the Broker endpoint rejected outright,
+	// which is a fault in this service or its configuration.
+	classInvalidRequest = "broker_invalid_request"
+	// classTransport names a transport or TLS failure against the broker socket.
+	classTransport = "broker_transport"
+	// classTimeout names a Broker call that ran out of time.
+	classTimeout = "broker_timeout"
+	// classNoSVID names a subscription the endpoint accepted and then ended
+	// without delivering an SVID.
+	classNoSVID = "broker_no_svid"
+	// classMaterialInvalid names an SVID this service could not convert into the
+	// PEM triple a guest agent can use.
+	classMaterialInvalid = "exchange_material_invalid"
+	// classUnknown names a Broker failure with no documented sentinel.
+	classUnknown = "broker_unknown"
+)
+
+// errExchangeMaterial reports an SVID the Broker API delivered that this service
+// could not turn into usable PEM. It is this package's own fault class, distinct
+// from every internal/broker sentinel, so a structurally broken delivery is not
+// laundered into a transport problem an operator would look for in the wrong
+// place.
+var errExchangeMaterial = errors.New("exchange SVID material is unusable")
 
 // bindingLookup is the slice of the nonce store this service reads directly: it
 // answers "which instance is this nonce bound to" before anything is resolved
@@ -146,6 +216,22 @@ type nonceMinter interface {
 type selectorDeriver interface {
 	// Derive returns the frozen selector set for the referenced instance.
 	Derive(ctx context.Context, ref attestor.Reference) ([]attestor.Selector, error)
+}
+
+// exchangeIssuer is the port into the SPIRE Broker API. It is the one port whose
+// answer is credential material rather than a description of one, and
+// github.com/componere/incusos-spire/internal/broker is the only package that
+// implements it: the experimental Broker proto stays behind that adapter, and
+// this service links only the vendor reference message it submits.
+//
+// The port is narrow on purpose. This service cannot ask the Broker API for an
+// arbitrary identity: it submits one opaque workload reference and takes
+// whatever the host agent's attestor plugin and the server's registration
+// entries decide that reference is worth.
+type exchangeIssuer interface {
+	// FetchX509SVID returns the X.509-SVID SPIRE issues for reference, together
+	// with the trust bundle of its trust domain.
+	FetchX509SVID(ctx context.Context, reference *anypb.Any) (broker.X509SVID, error)
 }
 
 // expiredLister is the slice of the nonce store the reaper reads: the records
@@ -259,11 +345,107 @@ func (r redeemRequest) LogValue() slog.Value {
 	)
 }
 
+// exchangeKeyPEM is the PKCS#8 PEM private key of an exchange SVID.
+//
+// It is a distinct type because it is the most sensitive value this process ever
+// holds, and it is modelled on [nonce.Secret] for the same reason:
+// [exchangeKeyPEM.String], [exchangeKeyPEM.GoString], [exchangeKeyPEM.Format],
+// and [exchangeKeyPEM.LogValue] all render [redactedExchangeKey], so the key
+// cannot reach a log line, an error string, or any [fmt] verb.
+// [exchangeKeyPEM.MarshalJSON] is the single deliberate reveal, and its only
+// caller is the encoder that writes the redemption answer to the guest that just
+// proved it owns this identity.
+//
+// Neither the material nor its length is ever reported. A length is a fact about
+// a private key, and a log line that carries one for a specific nonce ID has
+// described that key.
+type exchangeKeyPEM struct {
+	// pem is the PEM-encoded PKCS#8 key. Nothing formats, measures, or copies it
+	// except [exchangeKeyPEM.MarshalJSON].
+	pem []byte
+}
+
+// newExchangeKeyPEM wraps PEM-encoded PKCS#8 key material.
+func newExchangeKeyPEM(encoded []byte) exchangeKeyPEM {
+	return exchangeKeyPEM{pem: encoded}
+}
+
+// MarshalJSON encodes the key as a JSON string. It is the one deliberate reveal
+// of this type and exists so the guest receives usable material; see the type
+// documentation for why nothing else may.
+func (k exchangeKeyPEM) MarshalJSON() ([]byte, error) {
+	encoded, err := json.Marshal(string(k.pem))
+	if err != nil {
+		return nil, fmt.Errorf("marshal exchange private key: %w", err)
+	}
+
+	return encoded, nil
+}
+
+// String returns [redactedExchangeKey]. It satisfies [fmt.Stringer] so that %v
+// and %s can never print key material.
+func (k exchangeKeyPEM) String() string {
+	return redactedExchangeKey
+}
+
+// Format writes [redactedExchangeKey] for every verb. It satisfies
+// [fmt.Formatter], which [fmt] consults ahead of [fmt.Stringer] and for verbs
+// such as %d and %q that a Stringer does not cover, so no verb can reach the key
+// material.
+func (k exchangeKeyPEM) Format(state fmt.State, _ rune) {
+	_, _ = io.WriteString(state, redactedExchangeKey)
+}
+
+// GoString returns [redactedExchangeKey]. It satisfies [fmt.GoStringer] so that
+// %#v can never print key material.
+func (k exchangeKeyPEM) GoString() string {
+	return redactedExchangeKey
+}
+
+// LogValue returns [redactedExchangeKey] as a [log/slog] value. It satisfies
+// [log/slog.LogValuer] so that structured logging can never record key material.
+func (k exchangeKeyPEM) LogValue() slog.Value {
+	return slog.StringValue(redactedExchangeKey)
+}
+
+// exchangeMaterial is one exchange SVID in the encoding a SPIRE agent reads: PEM
+// files for x509pop's certificate_path, private_key_path, and the trust bundle.
+type exchangeMaterial struct {
+	// ID is the SPIFFE ID SPIRE issued, expected to be
+	// spiffe://<trust domain>/spire-exchange/incus/<instance uuid>.
+	ID broker.SPIFFEID
+	// ChainPEM is the certificate chain, leaf first.
+	ChainPEM string
+	// BundlePEM is the X.509 bundle of the trust domain.
+	BundlePEM string
+	// Key is the PKCS#8 private key for ChainPEM.
+	Key exchangeKeyPEM
+	// ExpiresAt is the leaf's NotAfter: the instant the guest can no longer
+	// attest with this material.
+	ExpiresAt time.Time
+}
+
 // redeemResponse is the guest answer on a successful redemption.
 //
-// P9 replaces this body with an exchange SVID: the guest will receive
-// credential material instead of a description of the identity it proved. The
-// selector list is the P8 observable, and it is secret-free.
+// This body carries a private key. It is the single most sensitive response in
+// the system: whoever holds exchange_key_pem together with
+// exchange_cert_chain_pem can complete x509pop node attestation as
+// spiffe://<trust domain>/spire/agent/x509pop/incus/<instance uuid> until
+// exchange_expires_at. It is therefore returned exactly once, to the caller that
+// just proved possession of the bound instance's one-time nonce, over TLS, and
+// it is never logged, never stored by this service, and never re-issuable for
+// the same nonce.
+//
+// The guest must hold this material in memory-backed storage only: a tmpfs
+// directory, written, used once to attest, and gone at the next boot. Writing it
+// to a persistent guest disk would turn a short-lived credential into a durable
+// one that survives every control this design has. The spike records that
+// delivery-and-holding question as a known-unsolved design point (P9 step 2)
+// rather than claiming to have closed it: the guest is given the key, so the
+// guest's own storage decision is load-bearing and unenforceable from here.
+//
+// The P8 fields are kept. The selector list is what the live run reads to
+// confirm which identity was proved, and it is secret-free.
 type redeemResponse struct {
 	// NonceID echoes the consumed nonce identifier.
 	NonceID nonce.NonceID `json:"nonce_id"`
@@ -277,6 +459,43 @@ type redeemResponse struct {
 	Project attestor.ProjectName `json:"project"`
 	// Selectors are the frozen incus: selectors derived for the bound instance.
 	Selectors []attestor.Selector `json:"selectors"`
+	// ExchangeSPIFFEID is the SPIFFE ID of the exchange SVID.
+	ExchangeSPIFFEID broker.SPIFFEID `json:"exchange_spiffe_id"`
+	// ExchangeCertChainPEM is the exchange certificate chain, leaf first, for
+	// x509pop's certificate_path.
+	ExchangeCertChainPEM string `json:"exchange_cert_chain_pem"`
+	// ExchangeKeyPEM is the PKCS#8 private key for x509pop's private_key_path.
+	// It is the reason this type's documentation exists.
+	ExchangeKeyPEM exchangeKeyPEM `json:"exchange_key_pem"`
+	// ExchangeBundlePEM is the trust bundle of the trust domain, which the guest
+	// agent needs to verify the server it is about to attest to.
+	ExchangeBundlePEM string `json:"exchange_bundle_pem"`
+	// ExchangeExpiresAt is the leaf's NotAfter. After it, this material attests
+	// nothing and the guest needs a fresh nonce.
+	ExchangeExpiresAt time.Time `json:"exchange_expires_at"`
+}
+
+// String redacts the answer. It satisfies [fmt.Stringer] so that %v and %s on a
+// composed answer cannot print the key it carries. [exchangeKeyPEM] already
+// refuses every verb on its own; this refuses the enclosing document too, because
+// a struct is only ever one careless %+v away from its fields.
+func (r redeemResponse) String() string {
+	return "redeemResponse(nonce_id=" + string(r.NonceID) +
+		", exchange_spiffe_id=" + string(r.ExchangeSPIFFEID) +
+		", exchange_key_pem=" + redactedExchangeKey + ")"
+}
+
+// LogValue redacts the answer for [log/slog]. It is the guard that matters most:
+// [log/slog] resolves a [log/slog.LogValuer] only at the top of an attribute, so
+// a handler handed this whole struct would otherwise fall back to marshalling it,
+// and marshalling is the one path that deliberately reveals the key.
+func (r redeemResponse) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String(fieldNonceID, string(r.NonceID)),
+		slog.String(fieldInstanceUUID, string(r.InstanceUUID)),
+		slog.String(fieldExchangeID, string(r.ExchangeSPIFFEID)),
+		slog.String("exchange_key_pem", redactedExchangeKey),
+	)
 }
 
 // errorResponse is the uniform failure body. It names the status class and
@@ -299,6 +518,9 @@ type ServiceConfig struct {
 	Minter nonceMinter
 	// Deriver produces the frozen selector set for a redeemed instance.
 	Deriver selectorDeriver
+	// Exchange obtains the exchange SVID a redeemed guest receives. It is
+	// required: a redemption that cannot issue one has nothing to answer with.
+	Exchange exchangeIssuer
 	// Logger receives every mint and every redemption decision.
 	Logger *slog.Logger
 	// MintTokenDigest is the SHA-256 of the operator bearer token that
@@ -325,6 +547,8 @@ type Service struct {
 	minter nonceMinter
 	// deriver produces the frozen selector set.
 	deriver selectorDeriver
+	// exchange obtains the exchange SVID a redeemed guest receives.
+	exchange exchangeIssuer
 	// logger receives every decision this service makes.
 	logger *slog.Logger
 	// mintTokenDigest is the SHA-256 of the accepted operator bearer token.
@@ -349,6 +573,8 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		return nil, errors.New("broker: service requires a nonce minter")
 	case cfg.Deriver == nil:
 		return nil, errors.New("broker: service requires a selector deriver")
+	case cfg.Exchange == nil:
+		return nil, errors.New("broker: service requires an exchange SVID issuer")
 	case cfg.Logger == nil:
 		return nil, errors.New("broker: service requires a logger")
 	case cfg.MintTokenDigest == [sha256.Size]byte{}:
@@ -364,6 +590,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		bindings:            cfg.Bindings,
 		minter:              cfg.Minter,
 		deriver:             cfg.Deriver,
+		exchange:            cfg.Exchange,
 		logger:              cfg.Logger,
 		mintTokenDigest:     cfg.MintTokenDigest,
 		maxNonceTTL:         cfg.MaxNonceTTL,
@@ -567,6 +794,11 @@ func (s *Service) requestedTTL(request mintRequest) (time.Duration, error) {
 // nonce is the guest's credential: a guest has no other secret to present, and
 // requiring one would mean provisioning a second credential to protect the
 // first. See the package documentation for the full asymmetry argument.
+//
+// A successful consume is the point of no return. The clear, the selector
+// derivation, and the exchange-SVID fetch all run against a nonce that is already
+// spent, so a Broker failure among them is reported as this service's fault and
+// never as a refused presentation. See [Service.grantExchange].
 func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if !s.requirePost(w, r, operationRedeem) {
@@ -612,7 +844,40 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The clear runs before the exchange fetch, not after. The consume has
+	// committed, so the value in user.spiffe-bootstrap no longer redeems, but it
+	// is still a readable string in that instance's configuration and the reaper
+	// deliberately leaves consumed records alone forever. Clearing first bounds
+	// how long that dead value lingers to this request; clearing afterwards would
+	// mean every Broker failure — a timeout, an unreachable socket, a
+	// misconfigured registration entry — left it readable indefinitely. The clear
+	// never fails the redemption either way, so ordering it first cannot cost the
+	// guest its SVID.
 	s.clearBootstrap(ctx, consumed.ID, live)
+
+	s.grantExchange(w, r, consumed, live)
+}
+
+// grantExchange completes a committed redemption: it derives the selector set,
+// obtains the exchange SVID for the bound instance, and answers the guest.
+//
+// The nonce is already spent when this runs, which changes what a Broker failure
+// means. It is not "your nonce was rejected", it is "your nonce is gone and you
+// got nothing for it", so it is answered as a 500 or a 503 and never as a 401 or a
+// 409, and it is logged with a failure class an operator can act on. See
+// [Service.burn]. A derivation failure keeps the mapping P8 fixed for it, which is
+// the mapping the live run already reads.
+//
+// The selectors are derived before the SVID is requested. A derivation failure
+// then costs nothing beyond the nonce, whereas the reverse order would leave a
+// live exchange credential issued for an instance and delivered to nobody.
+func (s *Service) grantExchange(
+	w http.ResponseWriter,
+	r *http.Request,
+	consumed nonce.Record,
+	live attestor.InstanceRecord,
+) {
+	ctx := r.Context()
 
 	selectors, err := s.deriver.Derive(ctx, attestor.Reference{
 		InstanceUUID: consumed.Instance,
@@ -621,7 +886,14 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 		Server:       "",
 	})
 	if err != nil {
-		s.deny(r, w, operationRedeem, id, consumed.Instance, err)
+		s.deny(r, w, operationRedeem, consumed.ID, consumed.Instance, err)
+
+		return
+	}
+
+	exchange, err := s.fetchExchange(ctx, consumed)
+	if err != nil {
+		s.burn(r, w, consumed, err)
 
 		return
 	}
@@ -634,17 +906,88 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 		fieldInstanceName, live.Name,
 		"generation", consumed.Generation,
 		fieldProject, consumed.Project,
+		fieldExchangeID, string(exchange.ID),
+		fieldExchangeExpiresAt, exchange.ExpiresAt,
 		fieldHTTPStatus, http.StatusOK,
 	)
 
 	_ = s.writeJSON(ctx, w, http.StatusOK, redeemResponse{
-		NonceID:      consumed.ID,
-		InstanceUUID: consumed.Instance,
-		InstanceName: live.Name,
-		Generation:   consumed.Generation,
-		Project:      consumed.Project,
-		Selectors:    selectors,
+		NonceID:              consumed.ID,
+		InstanceUUID:         consumed.Instance,
+		InstanceName:         live.Name,
+		Generation:           consumed.Generation,
+		Project:              consumed.Project,
+		Selectors:            selectors,
+		ExchangeSPIFFEID:     exchange.ID,
+		ExchangeCertChainPEM: exchange.ChainPEM,
+		ExchangeKeyPEM:       exchange.Key,
+		ExchangeBundlePEM:    exchange.BundlePEM,
+		ExchangeExpiresAt:    exchange.ExpiresAt,
 	})
+}
+
+// fetchExchange obtains the exchange SVID for the instance a consumed nonce was
+// bound to, in the PEM encoding a guest agent can use.
+//
+// The reference is a claim, and that is the whole point of routing it through the
+// Broker API rather than signing anything here. This service asserts an instance
+// UUID; the host agent's attestor plugin reads that instance back out of
+// authoritative Incus state and returns incus:uuid:<uuid> only if it agrees, and
+// the SPIRE server matches that selector against the registration entry for
+// spiffe://<trust domain>/spire-exchange/incus/<uuid>. The exchange SVID
+// therefore exists only because a physically attested host agent independently
+// confirmed the instance, which is what makes it worth trusting at all.
+//
+// The generation is deliberately not claimed. The redemption just verified it
+// against live state, and the host plugin derives every selector from live state
+// regardless, so asserting it again would only add a way for this service to
+// disagree with the authority it is deferring to.
+func (s *Service) fetchExchange(ctx context.Context, consumed nonce.Record) (exchangeMaterial, error) {
+	reference, err := anypb.New(&incusv1alpha1.IncusInstanceReference{
+		InstanceUuid:   string(consumed.Instance),
+		Project:        string(consumed.Project),
+		GenerationUuid: "",
+		Server:         "",
+	})
+	if err != nil {
+		return exchangeMaterial{}, fmt.Errorf("marshal instance reference: %w", err)
+	}
+
+	svid, err := s.exchange.FetchX509SVID(ctx, reference)
+	if err != nil {
+		return exchangeMaterial{}, err
+	}
+
+	return exchangePEM(svid)
+}
+
+// burn answers a redemption whose nonce was consumed and whose exchange SVID
+// never arrived.
+//
+// It exists because [Service.deny] would tell the wrong story. A denial means the
+// presentation was refused and the nonce is still whatever it was; this means the
+// presentation was accepted, the nonce is spent, and the failure is on this side.
+// The record therefore carries outcome=burned and a failure class, and the answer
+// is a 5xx: the guest must obtain a fresh nonce from an operator, and no retry of
+// this one can ever succeed.
+func (s *Service) burn(r *http.Request, w http.ResponseWriter, consumed nonce.Record, err error) {
+	status, code, class := exchangeFailure(err)
+	ctx := r.Context()
+
+	s.logger.ErrorContext(ctx, "nonce consumed but no exchange SVID was issued",
+		fieldOperation, operationRedeem,
+		fieldOutcome, "burned",
+		fieldNonceID, consumed.ID,
+		fieldInstanceUUID, consumed.Instance,
+		fieldProject, consumed.Project,
+		fieldFailureClass, class,
+		fieldPeerAddress, r.RemoteAddr,
+		fieldHTTPStatus, status,
+		fieldCode, code,
+		fieldReason, err.Error(),
+	)
+
+	_ = s.writeJSON(ctx, w, status, errorResponse{Error: code})
 }
 
 // clearBootstrap empties the bootstrap key after a redemption has committed.
@@ -867,6 +1210,106 @@ func failureStatus(err error) (int, string) {
 	default:
 		return http.StatusInternalServerError, codeInternal
 	}
+}
+
+// exchangeFailure maps a Broker API failure onto its status, its uniform body
+// code, and its log failure class. Every outcome is a 5xx, because by the time
+// this mapping is consulted the guest has done everything right and the nonce is
+// gone.
+//
+// The split is between what an operator must fix and what a caller may retry.
+// A denial means the host-side configuration is wrong — the reference type is
+// outside the agent's broker allowlist, or no registration entry matches
+// incus:uuid:<uuid> for the exchange SPIFFE ID — and no amount of retrying by a
+// guest will change that, so it answers 500. A transport failure, a timeout, and
+// an empty stream are conditions that pass, so they answer 503 and invite the
+// operator to mint again once the broker socket is back.
+//
+// [broker.ErrReferenceTypeDenied] is matched before [broker.ErrPermissionDenied]
+// because it wraps it, and it is the one denial the adapter can attribute.
+func exchangeFailure(err error) (int, string, string) {
+	switch {
+	case errors.Is(err, broker.ErrReferenceTypeDenied):
+		return http.StatusInternalServerError, codeInternal, classReferenceTypeDenied
+
+	case errors.Is(err, broker.ErrPermissionDenied):
+		return http.StatusInternalServerError, codeInternal, classPermissionDenied
+
+	case errors.Is(err, broker.ErrInvalidRequest):
+		return http.StatusInternalServerError, codeInternal, classInvalidRequest
+
+	case errors.Is(err, broker.ErrTimeout):
+		return http.StatusServiceUnavailable, codeUnavailable, classTimeout
+
+	case errors.Is(err, broker.ErrTransport):
+		return http.StatusServiceUnavailable, codeUnavailable, classTransport
+
+	case errors.Is(err, broker.ErrNoSVID):
+		return http.StatusServiceUnavailable, codeUnavailable, classNoSVID
+
+	case errors.Is(err, errExchangeMaterial):
+		return http.StatusInternalServerError, codeInternal, classMaterialInvalid
+
+	default:
+		return http.StatusInternalServerError, codeInternal, classUnknown
+	}
+}
+
+// exchangePEM converts one Broker-delivered SVID out of DER into the PEM triple a
+// SPIRE agent reads: an x509pop certificate chain, its PKCS#8 key, and the trust
+// bundle. The leaf's NotAfter becomes the material's expiry, which is the only
+// deadline the guest can act on.
+//
+// The private key is moved, never inspected. Its DER is wrapped in a PEM block
+// and handed to [newExchangeKeyPEM] without being parsed, because parsing it
+// would put a second copy of the key in this process to learn something the
+// adapter already documents. Every failure here names a structural fault and
+// never any part of the material.
+func exchangePEM(svid broker.X509SVID) (exchangeMaterial, error) {
+	chain, err := x509.ParseCertificates(svid.ChainDER)
+	if err != nil {
+		return exchangeMaterial{}, fmt.Errorf("%w: parse certificate chain: %w", errExchangeMaterial, err)
+	}
+
+	if len(chain) == 0 {
+		return exchangeMaterial{}, fmt.Errorf("%w: the certificate chain is empty", errExchangeMaterial)
+	}
+
+	bundle, err := x509.ParseCertificates(svid.BundleDER)
+	if err != nil {
+		return exchangeMaterial{}, fmt.Errorf("%w: parse trust bundle: %w", errExchangeMaterial, err)
+	}
+
+	if len(bundle) == 0 {
+		return exchangeMaterial{}, fmt.Errorf("%w: the trust bundle is empty", errExchangeMaterial)
+	}
+
+	key := pem.EncodeToMemory(&pem.Block{Type: pemTypePrivateKey, Headers: nil, Bytes: svid.KeyDER})
+	if len(svid.KeyDER) == 0 || key == nil {
+		return exchangeMaterial{}, fmt.Errorf("%w: no usable private key was delivered", errExchangeMaterial)
+	}
+
+	return exchangeMaterial{
+		ID:        svid.ID,
+		ChainPEM:  encodeCertificatesPEM(chain),
+		BundlePEM: encodeCertificatesPEM(bundle),
+		Key:       newExchangeKeyPEM(key),
+		ExpiresAt: chain[0].NotAfter,
+	}, nil
+}
+
+// encodeCertificatesPEM concatenates certificates as PEM blocks in the order
+// given, which for a chain means leaf first.
+func encodeCertificatesPEM(certificates []*x509.Certificate) string {
+	var encoded strings.Builder
+
+	for _, certificate := range certificates {
+		block := &pem.Block{Type: pemTypeCertificate, Headers: nil, Bytes: certificate.Raw}
+		// A strings.Builder never fails a write.
+		_ = pem.Encode(&encoded, block)
+	}
+
+	return encoded.String()
 }
 
 // ReaperConfig carries the collaborators of a [Reaper]. Every field is required;

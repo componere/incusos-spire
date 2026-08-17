@@ -14,11 +14,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/componere/incusos-spire/internal/attestor"
+	"github.com/componere/incusos-spire/internal/broker"
 	"github.com/componere/incusos-spire/internal/incus/bootstrap"
 	"github.com/componere/incusos-spire/internal/incus/identity"
 	"github.com/componere/incusos-spire/internal/nonce"
@@ -112,6 +114,23 @@ type options struct {
 	// authorizes the mint endpoint. It is required: there is no unauthenticated
 	// mode, because the endpoint writes a bearer credential into a guest.
 	MintTokenPath string
+	// BrokerSocketPath is the host SPIRE agent's experimental.broker
+	// socket_path. It is the mutual-TLS Unix socket this service asks for an
+	// exchange SVID on, so it must be reachable from this process: in the spike
+	// topology the agent's broker run directory is bind-mounted into the broker
+	// container.
+	BrokerSocketPath string
+	// WorkloadAPISocketPath is the host SPIRE agent's Workload API socket. It is
+	// where this service obtains its OWN SVID, which is the credential the Broker
+	// endpoint authorizes: without it there is no client identity to present.
+	// SPIRE requires the two sockets to live in unrelated directories.
+	WorkloadAPISocketPath string
+	// AgentSPIFFEID is the exact SPIFFE ID the Broker endpoint must present.
+	// Empty when AgentTrustDomain is set.
+	AgentSPIFFEID string
+	// AgentTrustDomain authorizes any Broker endpoint identity in this trust
+	// domain. Empty when AgentSPIFFEID is set.
+	AgentTrustDomain string
 	// NonceTTL is the lifetime of a minted nonce.
 	NonceTTL time.Duration
 	// MaxNonceTTL is the longest lifetime a mint request may ask for through
@@ -124,7 +143,8 @@ type options struct {
 	// ReapGrace is how long past expiry a record is left alone before it is
 	// withdrawn. Zero withdraws as soon as the next sweep sees it.
 	ReapGrace time.Duration
-	// RequestTimeout bounds every Incus call, including retries.
+	// RequestTimeout bounds every Incus call and every Broker API call,
+	// including retries.
 	RequestTimeout time.Duration
 }
 
@@ -167,6 +187,7 @@ func parseOptions(args []string, lookupEnv envLookup) (options, error) {
 	flags.StringVar(&opts.MintTokenPath, "mint-token-file",
 		envString(lookupEnv, "MINT_TOKEN_FILE", ""),
 		"path to the file holding the operator bearer token for POST "+mintPath)
+	registerExchangeFlags(flags, &opts, lookupEnv)
 
 	ttl, err := envDuration(lookupEnv, "NONCE_TTL", defaultNonceTTL)
 	if err != nil {
@@ -231,6 +252,28 @@ func parseOptions(args []string, lookupEnv envLookup) (options, error) {
 	return opts, nil
 }
 
+// registerExchangeFlags binds the Broker API configuration onto flags: the two
+// host agent sockets and the endpoint identity this service will accept.
+//
+// They are grouped in their own function because they are one decision — where
+// the host SPIRE agent is and who it is allowed to be — and because the flag set
+// this service already carries is long enough that a fifth concern buried in it
+// would be read as a fourth.
+func registerExchangeFlags(flags *flag.FlagSet, opts *options, lookupEnv envLookup) {
+	flags.StringVar(&opts.BrokerSocketPath, "broker-socket",
+		envString(lookupEnv, "BROKER_SOCKET", ""),
+		"absolute path to the host SPIRE agent's experimental.broker socket")
+	flags.StringVar(&opts.WorkloadAPISocketPath, "workload-api-socket",
+		envString(lookupEnv, "WORKLOAD_API_SOCKET", ""),
+		"absolute path to the host SPIRE agent's Workload API socket, this service's own SVID source")
+	flags.StringVar(&opts.AgentSPIFFEID, "agent-spiffe-id",
+		envString(lookupEnv, "AGENT_SPIFFE_ID", ""),
+		"exact SPIFFE ID the Broker endpoint must present")
+	flags.StringVar(&opts.AgentTrustDomain, "agent-trust-domain",
+		envString(lookupEnv, "AGENT_TRUST_DOMAIN", ""),
+		"trust domain any Broker endpoint identity may belong to")
+}
+
 // validate rejects an unusable configuration, naming every fault, before
 // anything is loaded or dialled.
 //
@@ -255,6 +298,8 @@ func (o options) validate() error {
 		{"bootstrap-key", o.BootstrapKeyPath},
 		{"project", o.Project},
 		{"mint-token-file", o.MintTokenPath},
+		{"broker-socket", o.BrokerSocketPath},
+		{"workload-api-socket", o.WorkloadAPISocketPath},
 	}
 
 	var faults []string
@@ -268,6 +313,8 @@ func (o options) validate() error {
 	if (o.IncusServerCertPath == "") == (o.IncusServerFingerprint == "") {
 		faults = append(faults, "exactly one of -incus-server-cert and -incus-server-fingerprint is required")
 	}
+
+	faults = append(faults, o.exchangeFaults()...)
 
 	if o.AttestorCertPath != "" && o.AttestorCertPath == o.BootstrapCertPath {
 		faults = append(faults, "-attestor-cert and -bootstrap-cert must be different credentials")
@@ -306,6 +353,40 @@ func (o options) validate() error {
 	}
 
 	return nil
+}
+
+// exchangeFaults reports every fault in the Broker API configuration.
+//
+// Both sockets are dialled as unix:// targets, which a relative path cannot
+// address, and SPIRE keeps the two in unrelated directories: one is the
+// mutual-TLS Broker endpoint, the other hands out this process's own SVID. A
+// deployment that points both flags at one path has asked for an endpoint that
+// cannot exist, and a deployment that authorizes neither an exact agent ID nor a
+// trust domain has asked this service to trust whatever answers the socket.
+func (o options) exchangeFaults() []string {
+	var faults []string
+
+	if (o.AgentSPIFFEID == "") == (o.AgentTrustDomain == "") {
+		faults = append(faults, "exactly one of -agent-spiffe-id and -agent-trust-domain is required")
+	}
+
+	for _, socket := range []struct {
+		flag string
+		path string
+	}{
+		{"broker-socket", o.BrokerSocketPath},
+		{"workload-api-socket", o.WorkloadAPISocketPath},
+	} {
+		if socket.path != "" && !filepath.IsAbs(socket.path) {
+			faults = append(faults, "-"+socket.flag+" must be an absolute path")
+		}
+	}
+
+	if o.BrokerSocketPath != "" && o.BrokerSocketPath == o.WorkloadAPISocketPath {
+		faults = append(faults, "-broker-socket and -workload-api-socket must be different sockets")
+	}
+
+	return faults
 }
 
 // redeemURL is the guest-facing redemption endpoint written into every
@@ -381,6 +462,17 @@ func run(ctx context.Context, logger *slog.Logger, args []string, lookupEnv envL
 		return err
 	}
 
+	exchange, err := newExchangeIssuer(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if closeErr := exchange.Close(); closeErr != nil {
+			logger.ErrorContext(ctx, "release broker API client", fieldReason, closeErr.Error())
+		}
+	}()
+
 	store := memory.New()
 	minter := nonce.NewMinter(store, writer,
 		nonce.WithTTL(opts.NonceTTL),
@@ -392,6 +484,7 @@ func run(ctx context.Context, logger *slog.Logger, args []string, lookupEnv envL
 		Bindings:            store,
 		Minter:              minter,
 		Deriver:             attestor.NewDeriver(reader),
+		Exchange:            exchange,
 		Logger:              logger,
 		MintTokenDigest:     mintTokenDigest,
 		MaxNonceTTL:         opts.MaxNonceTTL,
@@ -415,6 +508,30 @@ func run(ctx context.Context, logger *slog.Logger, args []string, lookupEnv envL
 	}
 
 	return serve(ctx, logger, opts, service, reaper, serverCert, fingerprint)
+}
+
+// newExchangeIssuer builds the Broker API client every redemption obtains its
+// exchange SVID from.
+//
+// It is built at startup, not per request, and a failure here stops the process.
+// The client's own SVID comes from the host agent's Workload API, so a broker
+// that cannot obtain one has no identity the Broker endpoint would authorize, and
+// every redemption it accepted would consume a nonce and then answer 503. Failing
+// to start is the honest outcome: the listener never opens, no nonce is spent,
+// and an operator sees the cause once instead of once per guest.
+func newExchangeIssuer(ctx context.Context, opts options) (*broker.Client, error) {
+	client, err := broker.NewClient(ctx, broker.Config{
+		BrokerSocketPath:      broker.SocketPath(opts.BrokerSocketPath),
+		WorkloadAPISocketPath: broker.SocketPath(opts.WorkloadAPISocketPath),
+		AgentID:               broker.SPIFFEID(opts.AgentSPIFFEID),
+		AgentTrustDomain:      broker.TrustDomain(opts.AgentTrustDomain),
+		RequestTimeout:        opts.RequestTimeout,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build broker API client: %w", err)
+	}
+
+	return client, nil
 }
 
 // serve binds the listener, then serves TLS on it until the process is
@@ -472,6 +589,8 @@ func serve(
 		"tls_fingerprint", string(fingerprint),
 		"incus_url", opts.IncusURL,
 		fieldProject, opts.Project,
+		"broker_socket", opts.BrokerSocketPath,
+		"workload_api_socket", opts.WorkloadAPISocketPath,
 		"nonce_ttl", opts.NonceTTL.String(),
 		"max_nonce_ttl", opts.MaxNonceTTL.String(),
 		"reap_interval", opts.ReapInterval.String(),

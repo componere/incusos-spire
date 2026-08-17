@@ -1,0 +1,140 @@
+# SPIRE Agent 1.15.2 — guest-local agent for the P9 spike.
+#
+# THROWAWAY spike configuration. Appendix C of SPIKE_PLAN.md classifies
+# everything under spike/ as never merged as product code; this file exists to be
+# rendered once inside a guest, used, and deleted. It is deletable without loss
+# because the evidence lives in the journal.
+#
+# guest-agent-bootstrap.sh renders every @@<NAME>@@ placeholder below with sed and
+# then runs `spire-agent validate -config` on the result, so an unsubstituted
+# token or a syntax error fails the bootstrap instead of the attestation. The
+# placeholder names, written here without their @@ markers so this header stays
+# readable in the rendered file:
+#
+#   TRUST_DOMAIN          spike.incus.internal
+#   SERVER_ADDRESS        SPIRE server address ($SPIRE_SERVER_ADDRESS)
+#   SERVER_PORT           SPIRE server port ($SPIRE_SERVER_PORT, 8081)
+#   DATA_DIR              guest agent data dir ($AGENT_DATA_DIR)
+#   SOCKET_PATH           in-guest Workload API socket ($AGENT_SOCKET_PATH)
+#   LOG_LEVEL             DEBUG for the spike
+#   TRUST_BUNDLE_PATH     delivered trust bundle (public material)
+#   EXCHANGE_CERT_PATH    exchange SVID chain, leaf first — ON TMPFS
+#   EXCHANGE_KEY_PATH     exchange SVID private key — ON TMPFS, mode 0600
+#   KEY_MANAGER           memory | disk
+#   KEY_MANAGER_DATA      empty for memory, `directory = "..."` for disk
+#   HEALTH_BIND_ADDRESS   health listener address
+#   HEALTH_BIND_PORT      health listener port
+#
+# The two exchange paths point into a tmpfs that guest-agent-bootstrap.sh mounts
+# itself and then SHREDS AND UNMOUNTS once attestation succeeds. That is
+# deliberate: SPIKE_PLAN.md P9 step 2 records exchange-key handling as a
+# known-unsolved design point (risk R7), and the spike's stance is memory-only,
+# single-use, short-lived rather than a claim that the problem is solved. The
+# consequence is visible right here: after a successful bootstrap this
+# configuration names two files that no longer exist.
+
+agent {
+    trust_domain = "@@TRUST_DOMAIN@@"
+
+    server_address = "@@SERVER_ADDRESS@@"
+    server_port = "@@SERVER_PORT@@"
+
+    # Bootstrap trust: the guest validates the server against the bundle the
+    # broker delivered alongside the exchange SVID. Public material, so
+    # Appendix D rule 3 permits it in evidence and permits persisting it.
+    # PERSIST_TRUST_BUNDLE=0 leaves this path inside the tmpfs, in which case the
+    # agent cannot even start after the shred, let alone re-attest.
+    trust_bundle_path = "@@TRUST_BUNDLE_PATH@@"
+
+    # Agent runtime state. SPIRE 1.15.2 keeps the node SVID and the cached bundle
+    # here in agent-data.json (certificates only, no private key, mode 0600);
+    # guest-agent-bootstrap.sh reads the node SPIFFE ID out of it. P9's rollback
+    # note allows guest agent state on the guest disk.
+    data_dir = "@@DATA_DIR@@"
+
+    # The standard local Workload API. This socket is the whole point of the
+    # phase: an in-guest app must obtain its SVID from an ordinary Workload API,
+    # with no spike-specific client.
+    socket_path = "@@SOCKET_PATH@@"
+
+    log_level = "@@LOG_LEVEL@@"
+}
+
+plugins {
+    # The exchange credential, used exactly once.
+    #
+    # The server runs x509pop with mode = "spiffe" and the documented v1.15.2
+    # defaults svid_prefix = "/spire-exchange" and
+    # agent_path_template = "{{ .PluginName }}/{{ .SVIDPathTrimmed }}", so
+    #
+    #   spiffe://@@TRUST_DOMAIN@@/spire-exchange/incus/<instance-uuid>
+    #
+    # becomes the node identity
+    #
+    #   spiffe://@@TRUST_DOMAIN@@/spire/agent/x509pop/incus/<instance-uuid>
+    #
+    # certificate_path may hold the leaf followed by any intermediates in one
+    # file, which is exactly how the broker delivers the chain, so
+    # intermediates_path is not needed. The plugin also accepts
+    # spiffe_endpoint_socket instead of these two paths — irrelevant here,
+    # because the guest has no Workload API until this attestation succeeds.
+    NodeAttestor "x509pop" {
+        plugin_data {
+            certificate_path = "@@EXCHANGE_CERT_PATH@@"
+            private_key_path = "@@EXCHANGE_KEY_PATH@@"
+        }
+    }
+
+    # KeyManager: this holds the agent's OWN node-SVID private key, not the
+    # exchange key. The choice is the P9 step-4 re-attestation story, defined
+    # here rather than discovered later:
+    #
+    #   memory (spike default)
+    #     Nothing lands on the guest disk. An agent restart or a guest reboot
+    #     loses the node key, so the agent MUST re-attest — and it cannot, because
+    #     the exchange credential was shredded after its single use. The intended
+    #     recovery is therefore explicit: the operator mints a FRESH nonce and
+    #     re-runs guest-agent-bootstrap.sh, one bootstrap per boot. That is a
+    #     deliberate fail-closed property: a guest that was cloned, restored or
+    #     rolled back cannot silently resurrect a node identity, which is what
+    #     P10 cases 3, 6 and 7 examine.
+    #
+    #   disk
+    #     Writes the node key into data_dir (keys are stored there by the plugin),
+    #     so the agent resumes its existing node identity across a restart without
+    #     re-attesting, and only needs a new exchange credential once the node
+    #     SVID has expired. Cheaper operationally, but it puts a long-lived
+    #     identity key on the guest filesystem, where a snapshot, a disk image or
+    #     a stolen volume carries it away — and it decouples the node identity
+    #     from a live Incus instance record, which is the property the whole
+    #     architecture is built on.
+    #
+    # The spike runs `memory` and records the restart cost. Set
+    # AGENT_KEY_MANAGER=disk to render the persistent variant and measure the
+    # other half of the tradeoff.
+    KeyManager "@@KEY_MANAGER@@" {
+        plugin_data {
+            @@KEY_MANAGER_DATA@@
+        }
+    }
+
+    # In-guest workload attestation: plain unix selectors (uid, gid, path, sha256)
+    # for the registration entry the P9 workload case uses. Nothing
+    # Incus-specific runs inside the guest — the Incus-derived selectors belong to
+    # the host agent's incus-attestor plugin, one trust boundary further out.
+    WorkloadAttestor "unix" {
+        plugin_data {
+        }
+    }
+}
+
+# Liveness and readiness for the bootstrap harness and for the P10 restart cases.
+# `spire-agent healthcheck -socketPath` covers the same ground over the Workload
+# API socket; this listener is what a reboot case can poll without a client.
+health_checks {
+    listener_enabled = true
+    bind_address = "@@HEALTH_BIND_ADDRESS@@"
+    bind_port = "@@HEALTH_BIND_PORT@@"
+    live_path = "/live"
+    ready_path = "/ready"
+}

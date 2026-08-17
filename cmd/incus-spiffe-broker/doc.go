@@ -8,9 +8,11 @@
 // (github.com/componere/incusos-spire/internal/incus/bootstrap), the in-memory
 // nonce store (github.com/componere/incusos-spire/internal/nonce/memory), the
 // nonce lifecycle core (github.com/componere/incusos-spire/internal/nonce),
-// and the pure selector core
-// (github.com/componere/incusos-spire/internal/attestor). Composition happens
-// in main only; the HTTP surface talks to ports.
+// the pure selector core
+// (github.com/componere/incusos-spire/internal/attestor), and the SPIRE Broker
+// API adapter (github.com/componere/incusos-spire/internal/broker) that turns a
+// redemption into an exchange SVID. Composition happens in main only; the HTTP
+// surface talks to ports.
 //
 // # Decision D1-broker-binary: this binary stays separate from incus-attestor
 //
@@ -87,14 +89,94 @@
 // through /dev/incus/sock and therefore cannot state its own identity; a guest
 // that states someone else's identity is not believed.
 //
-// On success the service redeems the nonce, clears the bootstrap key, and
-// answers with the derived selectors for the bound instance:
+// On success the service redeems the nonce, clears the bootstrap key, derives the
+// selectors for the bound instance, obtains an exchange SVID for it, and answers:
 //
 //	{"nonce_id":"<id>","instance_uuid":"<uuid>","instance_name":"<name>",
-//	 "generation":"<generation>","project":"<project>","selectors":["incus:uuid:<uuid>", ...]}
+//	 "generation":"<generation>","project":"<project>","selectors":["incus:uuid:<uuid>", ...],
+//	 "exchange_spiffe_id":"spiffe://<td>/spire-exchange/incus/<uuid>",
+//	 "exchange_cert_chain_pem":"-----BEGIN CERTIFICATE-----...",
+//	 "exchange_key_pem":"-----BEGIN PRIVATE KEY-----...",
+//	 "exchange_bundle_pem":"-----BEGIN CERTIFICATE-----...",
+//	 "exchange_expires_at":"<RFC3339>"}
 //
-// P9 replaces that body with an exchange SVID; the selector list exists so the
-// P8 live run has an observable, secret-free result to record.
+// That body carries a private key and is the single most sensitive response in
+// the system. See "Exchange SVID issuance" below for what it is for, and
+// "Secret handling" for the rules that follow from it.
+//
+// # Exchange SVID issuance
+//
+// The exchange SVID is what the guest trades for its own node identity. The guest
+// writes the three PEM values out, points a local spire-agent at them with
+// NodeAttestor "x509pop" (mode "spiffe"), and the SPIRE server verifies the chain
+// against its own trust bundle plus proof of possession of the key. With the
+// documented SPIRE 1.15.2 defaults svid_prefix "/spire-exchange" and
+// agent_path_template "{{ .PluginName }}/{{ .SVIDPathTrimmed }}", the exchange
+// identity spiffe://<td>/spire-exchange/incus/<uuid> becomes the node identity
+// spiffe://<td>/spire/agent/x509pop/incus/<uuid>, and the guest then serves a
+// standard Workload API of its own.
+//
+// This service does not sign anything. It asks the host SPIRE agent's Broker API
+// for the SVID, submitting a google.protobuf.Any of type
+//
+//	type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference
+//
+// carrying the instance UUID and project the nonce record was bound to. That
+// indirection is the whole security argument, and it is worth stating plainly:
+// the reference is a claim, and nothing in it is believed. The host agent routes
+// it to the cmd/incus-attestor plugin, which reads that instance back out of
+// authoritative Incus state and answers incus:uuid:<uuid> only if it agrees; the
+// SPIRE server matches that selector against the registration entry for the
+// exchange SPIFFE ID. So an exchange SVID exists only because a physically
+// attested host agent, an authorized broker SVID, and selectors derived from the
+// authoritative instance record all lined up, and the guest's whole trust chain
+// stays rooted in the SPIRE trust domain.
+//
+// The generation is deliberately not claimed in the reference. The redemption
+// verified it against live state moments earlier, and the plugin derives every
+// selector from live state regardless, so restating it would only create a way
+// for this service to disagree with the authority it is deferring to.
+//
+// The Broker API client is built at startup from -broker-socket,
+// -workload-api-socket, and exactly one of -agent-spiffe-id and
+// -agent-trust-domain. The Workload API socket is where this service obtains its
+// OWN SVID, which is the credential the Broker endpoint authorizes; a process
+// that cannot obtain one refuses to start rather than accepting redemptions it
+// could only answer with a 503.
+//
+// # A Broker failure after consumption burns the nonce
+//
+// The nonce is consumed before the exchange SVID is requested, and that ordering
+// has a cost this package states rather than hides: if the Broker API then fails,
+// the guest has spent its one-time credential and received nothing. It must
+// obtain a fresh nonce from an operator. No retry of the burned one can succeed,
+// and none should: the alternative is issuing before committing single use, which
+// would mean a nonce that can mint two identities under a crash or a race.
+//
+// Such a failure is never reported as a rejected nonce. It answers 500 or 503
+// with the uniform body, never 401 or 409, and it is logged at error level as
+// "nonce consumed but no exchange SVID was issued" with outcome=burned, the nonce
+// ID, the instance UUID, and a failure_class. An operator reading the log can
+// therefore tell a burned nonce apart from a refused presentation, which is the
+// difference between "fix the host-side registration" and "this guest presented
+// something invalid":
+//
+//	failure_class                 status  meaning
+//	broker_reference_type_denied     500  reference type outside the agent's broker allowlist
+//	broker_permission_denied         500  denial the adapter cannot attribute: allowlist, or plugin policy
+//	broker_invalid_request           500  the Broker endpoint rejected this service's own request
+//	broker_transport                 503  broker socket or TLS failure
+//	broker_timeout                   503  the Broker call ran out of time
+//	broker_no_svid                   503  subscription accepted, stream ended empty
+//	exchange_material_invalid        500  delivered SVID could not be converted to usable PEM
+//	broker_unknown                   500  Broker failure with no documented sentinel
+//
+// The split is between what an operator must fix and what may pass on its own. A
+// denial means the host-side configuration is wrong — no registration entry keyed
+// on incus:uuid:<uuid> for the exchange SPIFFE ID, or a type URL outside the
+// allowlist — and no guest retry changes that, so it is a 500. A transport
+// failure, a timeout, and an empty stream are conditions that clear, so they are
+// 503.
 //
 // # Authentication, and why only one endpoint has it
 //
@@ -160,6 +242,13 @@
 //	attestor.ErrBackendUnavailable         503  unavailable
 //	nonce.ErrStoreUnavailable              503  unavailable
 //	nonce.ErrWriterUnavailable             503  unavailable
+//	broker.ErrPermissionDenied             500  internal
+//	broker.ErrReferenceTypeDenied          500  internal
+//	broker.ErrInvalidRequest               500  internal
+//	broker.ErrTransport                    503  unavailable
+//	broker.ErrTimeout                      503  unavailable
+//	broker.ErrNoSVID                       503  unavailable
+//	unusable exchange SVID material        500  internal
 //	missing or wrong operator token        401  unauthorized
 //	malformed or oversized request body    400  invalid_request
 //	unknown field in a request body        400  invalid_request
@@ -167,10 +256,13 @@
 //	any method other than POST             405  method_not_allowed
 //	anything else                          500  internal
 //
-// The last six rows are this service's own additions; the rest is the mapping
-// P8 fixed. attestor.ErrGenerationMismatch, attestor.ErrUnusableRecord, and
-// attestor.ErrInvalidReference are reachable only through selector derivation
-// after a successful redemption, and they join the class they belong to.
+// The Broker rows and the last six rows are this service's own additions; the
+// rest is the mapping P8 fixed. attestor.ErrGenerationMismatch,
+// attestor.ErrUnusableRecord, and attestor.ErrInvalidReference are reachable only
+// through selector derivation after a successful redemption, and they join the
+// class they belong to. The Broker rows are reachable only after the nonce has
+// been consumed, which is why none of them can be a 401 or a 409: see "A Broker
+// failure after consumption burns the nonce".
 //
 // Three rules constrain the table. The 401 bodies for an unknown nonce and for a
 // wrong secret are byte-identical, so a caller cannot use the broker to
@@ -186,13 +278,36 @@
 //
 // # Secret handling
 //
-// Appendix D applies in full. This package never calls nonce.Secret.Reveal:
-// the only reveal in the system is the marshalling of the bootstrap payload
-// inside the nonce package, on its way to the instance configuration key. Logs
-// carry nonce IDs, instance UUIDs, generations, project and instance names,
-// status codes, and outcomes. A presented secret is converted to a
+// Appendix D applies in full, and P9 adds a second sensitive value to it: the
+// exchange private key.
+//
+// This package never calls nonce.Secret.Reveal. The only reveal of a nonce in the
+// system is the marshalling of the bootstrap payload inside the nonce package, on
+// its way to the instance configuration key. A presented secret is converted to a
 // nonce.Secret, which redacts itself through every formatting path, and the raw
 // request field is zeroed as soon as that conversion happens.
+//
+// The exchange key gets the same treatment by construction. It is held in an
+// unexported type whose String, GoString, Format, and LogValue all render
+// "exchange-key(redacted)", so no fmt verb, no error string, and no slog handler
+// can reach it; its MarshalJSON is the single deliberate reveal, and its only
+// caller is the encoder that answers the guest. The enclosing answer redacts
+// itself the same way, because slog resolves a LogValuer only at the top of an
+// attribute and would otherwise marshal the whole struct. Neither the key nor its
+// length is ever recorded: a length is a fact about a specific private key.
+//
+// Logs carry nonce IDs, instance UUIDs, generations, project and instance names,
+// exchange SPIFFE IDs and expiries, status codes, failure classes, and outcomes.
+// Everything in that list is safe to quote into evidence after Appendix D's
+// checklist; the two things that are not in it are the nonce secret and the
+// exchange key.
+//
+// Where the key goes after this service hands it over is the part the spike does
+// not claim to have solved (P9 step 2). The guest must hold it in memory-backed
+// storage only — a tmpfs directory, written, used once to attest, and gone at the
+// next boot — and this service cannot enforce that. Writing it to a persistent
+// guest disk would convert a minutes-long credential into a durable one, which is
+// exactly the tradeoff recorded for the go/no-go rather than declared closed.
 //
 // # Ordering the live run depends on
 //
@@ -201,6 +316,20 @@
 // that no longer redeems, instead of a cleared key over a still-reusable
 // credential. A failure to clear therefore does not fail the redemption; it is
 // logged at error level and the caller still receives its answer.
+//
+// The clear also comes before the exchange-SVID fetch, not after. Once the consume
+// commits, the value in user.spiffe-bootstrap no longer redeems, but it is still a
+// readable string in that instance's configuration, and the reaper deliberately
+// leaves consumed records alone forever — so nothing else would ever remove it.
+// Clearing first bounds how long that dead value lingers to this one request;
+// clearing afterwards would mean every Broker failure, including a timeout against
+// an unreachable socket, left it readable indefinitely. The ordering costs the
+// guest nothing, because a failed clear never fails the redemption either way.
+//
+// The selectors are derived before the SVID is requested, for the mirror-image
+// reason: a derivation failure then costs only the nonce, whereas the reverse
+// order would leave a live exchange credential issued for an instance and
+// delivered to nobody.
 //
 // A mint whose operator never learned the nonce ID is withdrawn again. The
 // bootstrap key is already written by the time the answer is composed, so a

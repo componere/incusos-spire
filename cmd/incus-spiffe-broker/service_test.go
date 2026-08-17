@@ -3,13 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,12 +27,15 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/componere/incusos-spire/internal/attestor"
 	attestormocks "github.com/componere/incusos-spire/internal/attestor/mocks"
+	"github.com/componere/incusos-spire/internal/broker"
 	"github.com/componere/incusos-spire/internal/nonce"
 	"github.com/componere/incusos-spire/internal/nonce/memory"
 	noncemocks "github.com/componere/incusos-spire/internal/nonce/mocks"
+	incusv1alpha1 "github.com/componere/incusos-spire/proto/componere/incus/v1alpha1"
 )
 
 const (
@@ -49,6 +60,26 @@ const (
 	testMaxNonceTTL = 10 * time.Minute
 	// testCompensationTimeout bounds a detached withdrawal in the fixture.
 	testCompensationTimeout = 5 * time.Second
+	// testBrokerSocket is the host agent Broker API socket the fixture configures.
+	testBrokerSocket = "/spike/broker-run/broker.sock"
+	// testWorkloadAPISocket is the host agent Workload API socket the fixture
+	// configures. SPIRE requires it to live outside the broker socket's
+	// directory, and this pair does.
+	testWorkloadAPISocket = "/spike/run/api.sock"
+	// testAgentSPIFFEID is the host agent identity the Broker endpoint must
+	// present.
+	testAgentSPIFFEID = "spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de97"
+	// testTrustDomain is the spike trust domain.
+	testTrustDomain = "spike.incus.internal"
+	// exchangeSPIFFEID is the exchange identity P9 fixes: the x509pop
+	// svid_prefix "/spire-exchange" plus the plugin name and the instance UUID.
+	// SPIRE's default agent_path_template turns it into
+	// spiffe://spike.incus.internal/spire/agent/x509pop/incus/<uuid>.
+	exchangeSPIFFEID broker.SPIFFEID = "spiffe://" + testTrustDomain +
+		"/spire-exchange/incus/" + broker.SPIFFEID(guestUUID)
+	// exchangeLifetime is how long the fixture's exchange leaf stays valid. It is
+	// short because the material is used once, immediately, to attest.
+	exchangeLifetime = 5 * time.Minute
 )
 
 // liveRecord is the instance record the read path resolves for [guestUUID].
@@ -66,35 +97,77 @@ func liveRecord() attestor.InstanceRecord {
 	}
 }
 
+// stubExchange is a scripted [exchangeIssuer]. It exists so the redemption path
+// can be tested without the experimental Broker proto leaving
+// github.com/componere/incusos-spire/internal/broker: the test injects this
+// package's own port, exactly as main injects the real adapter.
+type stubExchange struct {
+	// svid is the SVID returned when err is nil.
+	svid broker.X509SVID
+	// err is the Broker failure to return instead of an SVID.
+	err error
+	// references records every reference the service submitted, in order.
+	references []*anypb.Any
+	// observe, when set, runs at fetch time. A test uses it to record where the
+	// Broker call fell relative to the other collaborators.
+	observe func()
+}
+
+// FetchX509SVID records the submitted reference and returns the scripted answer.
+func (s *stubExchange) FetchX509SVID(_ context.Context, reference *anypb.Any) (broker.X509SVID, error) {
+	s.references = append(s.references, reference)
+
+	if s.observe != nil {
+		s.observe()
+	}
+
+	if s.err != nil {
+		return broker.X509SVID{}, s.err
+	}
+
+	return s.svid, nil
+}
+
 // fixture is one wired service plus the doubles behind it.
 type fixture struct {
 	// reader is the read-only Incus path.
 	reader *attestormocks.MockInstanceReader
 	// writer is the bootstrap configuration writer.
 	writer *noncemocks.MockBootstrapWriter
+	// exchange is the Broker API port.
+	exchange *stubExchange
 	// store is the nonce store the minter and the service share.
 	store nonce.Store
 	// service is the subject under test.
 	service *Service
 	// logs captures everything the service logged.
 	logs *bytes.Buffer
+	// leaf is the exchange certificate the stub delivers, kept so a test can
+	// compare what the guest received against what was issued.
+	leaf *x509.Certificate
+	// signer is the private key of leaf, for the same reason.
+	signer *ecdsa.PrivateKey
 }
 
-// newFixture wires a service over store with mocked Incus adapters and the real
-// nonce lifecycle and selector cores. The cores are real on purpose: the
-// contract under test is the composition, not a restatement of it.
+// newFixture wires a service over store with mocked Incus adapters, a scripted
+// Broker API port, and the real nonce lifecycle and selector cores. The cores are
+// real on purpose: the contract under test is the composition, not a restatement
+// of it.
 func newFixture(t *testing.T, store nonce.Store) *fixture {
 	t.Helper()
 
 	reader := attestormocks.NewMockInstanceReader(t)
 	writer := noncemocks.NewMockBootstrapWriter(t)
 	logs := &bytes.Buffer{}
+	svid, leaf, signer := newExchangeSVID(t)
+	exchange := &stubExchange{svid: svid, err: nil, references: nil, observe: nil}
 
 	service, err := NewService(ServiceConfig{
 		Reader:              reader,
 		Bindings:            store,
 		Minter:              nonce.NewMinter(store, writer, nonce.WithTTL(time.Minute)),
 		Deriver:             attestor.NewDeriver(reader),
+		Exchange:            exchange,
 		Logger:              slog.New(slog.NewTextHandler(logs, nil)),
 		MintTokenDigest:     sha256.Sum256([]byte(mintToken)),
 		MaxNonceTTL:         testMaxNonceTTL,
@@ -102,7 +175,56 @@ func newFixture(t *testing.T, store nonce.Store) *fixture {
 	})
 	require.NoError(t, err)
 
-	return &fixture{reader: reader, writer: writer, store: store, service: service, logs: logs}
+	return &fixture{
+		reader:   reader,
+		writer:   writer,
+		exchange: exchange,
+		store:    store,
+		service:  service,
+		logs:     logs,
+		leaf:     leaf,
+		signer:   signer,
+	}
+}
+
+// newExchangeSVID builds the SVID the Broker API stub delivers: a self-signed
+// leaf whose only SAN is [exchangeSPIFFEID], its PKCS#8 key, and a bundle. It is
+// self-signed because nothing under test verifies the chain; the guest agent and
+// the SPIRE server do that, and P9's live run is what proves it.
+func newExchangeSVID(t *testing.T) (broker.X509SVID, *x509.Certificate, *ecdsa.PrivateKey) {
+	t.Helper()
+
+	signer, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	uri, err := url.Parse(string(exchangeSPIFFEID))
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now().Add(-time.Minute).Truncate(time.Second),
+		NotAfter:     time.Now().Add(exchangeLifetime).Truncate(time.Second),
+		URIs:         []*url.URL{uri},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, signer.Public(), signer)
+	require.NoError(t, err)
+
+	leaf, err := x509.ParseCertificate(der)
+	require.NoError(t, err)
+
+	keyDER, err := x509.MarshalPKCS8PrivateKey(signer)
+	require.NoError(t, err)
+
+	return broker.X509SVID{
+		ID:        exchangeSPIFFEID,
+		ChainDER:  der,
+		KeyDER:    keyDER,
+		BundleDER: der,
+		Hint:      "",
+	}, leaf, signer
 }
 
 // post sends one JSON body to path and returns the recorded answer.
@@ -239,6 +361,47 @@ func redeemBody(id nonce.NonceID, secret string) string {
 	return `{"nonce_id":"` + string(id) + `","nonce":"` + secret + `"}`
 }
 
+// guestAnswer is a redemption answer as the guest parses it off the wire. It is
+// declared here rather than reusing [redeemResponse] on purpose: the exchange key
+// is a PEM string in JSON and an [exchangeKeyPEM] in Go, and the type that
+// refuses to print itself must not gain a way to be reconstructed just so a test
+// can read it.
+type guestAnswer struct {
+	// NonceID echoes the consumed nonce.
+	NonceID nonce.NonceID `json:"nonce_id"`
+	// InstanceUUID is the bound volatile.uuid.
+	InstanceUUID attestor.InstanceUUID `json:"instance_uuid"`
+	// InstanceName is the live instance name.
+	InstanceName attestor.InstanceName `json:"instance_name"`
+	// Generation is the bound generation.
+	Generation attestor.GenerationUUID `json:"generation"`
+	// Project is the bound project.
+	Project attestor.ProjectName `json:"project"`
+	// Selectors are the frozen incus: selectors.
+	Selectors []attestor.Selector `json:"selectors"`
+	// ExchangeSPIFFEID is the exchange identity.
+	ExchangeSPIFFEID broker.SPIFFEID `json:"exchange_spiffe_id"`
+	// ExchangeCertChainPEM is the exchange certificate chain.
+	ExchangeCertChainPEM string `json:"exchange_cert_chain_pem"`
+	// ExchangeKeyPEM is the exchange private key, which is why a guest writes
+	// this document to tmpfs and nowhere else.
+	ExchangeKeyPEM string `json:"exchange_key_pem"`
+	// ExchangeBundlePEM is the trust bundle.
+	ExchangeBundlePEM string `json:"exchange_bundle_pem"`
+	// ExchangeExpiresAt is the leaf's NotAfter.
+	ExchangeExpiresAt time.Time `json:"exchange_expires_at"`
+}
+
+// guestAnswerOf decodes one redemption answer.
+func guestAnswerOf(t *testing.T, body []byte) guestAnswer {
+	t.Helper()
+
+	var parsed guestAnswer
+	require.NoError(t, json.Unmarshal(body, &parsed))
+
+	return parsed
+}
+
 func TestMintResolvesLiveNameAndWithholdsTheSecret(t *testing.T) {
 	fixture := newFixture(t, memory.New())
 	fixture.reader.EXPECT().
@@ -329,8 +492,7 @@ func TestRedeemNeverTrustsACallerSuppliedInstanceUUID(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 
-	var redeemed redeemResponse
-	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &redeemed))
+	redeemed := guestAnswerOf(t, response.Body.Bytes())
 	require.Equal(t, guestUUID, redeemed.InstanceUUID)
 	require.Equal(t, guestName, redeemed.InstanceName)
 	require.Equal(t, guestProject, redeemed.Project)
@@ -432,6 +594,274 @@ func TestRedeemSucceedsWhenClearFails(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	require.Contains(t, fixture.logs.String(), "bootstrap key not cleared after redemption committed")
 	require.NotContains(t, fixture.logs.String(), secret)
+}
+
+func TestRedeemReturnsTheExchangeSVIDAsAUsablePEMTriple(t *testing.T) {
+	fixture := newFixture(t, memory.New())
+	fixture.reader.EXPECT().
+		ReadInstanceByUUID(mock.Anything, guestUUID, mock.Anything).
+		Return(liveRecord(), nil)
+
+	id, secret := fixture.mint(t)
+	fixture.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+
+	response := fixture.post(t, redeemPath, redeemBody(id, secret))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	redeemed := guestAnswerOf(t, response.Body.Bytes())
+
+	// The identity the guest receives is the one P9 fixed, and its expiry is the
+	// leaf's NotAfter rather than anything this service invented.
+	require.Equal(t, exchangeSPIFFEID, redeemed.ExchangeSPIFFEID)
+	require.True(t, fixture.leaf.NotAfter.Equal(redeemed.ExchangeExpiresAt))
+
+	// The chain and the bundle are PEM the agent can load, and the chain's leaf is
+	// the certificate the Broker API delivered.
+	chain := parseCertificatePEM(t, redeemed.ExchangeCertChainPEM)
+	require.Len(t, chain, 1)
+	require.Equal(t, fixture.leaf.Raw, chain[0].Raw)
+	require.Len(t, parseCertificatePEM(t, redeemed.ExchangeBundlePEM), 1)
+
+	// The key is a PKCS#8 PEM block, and it is the key for that leaf: without
+	// proof of possession x509pop refuses the exchange.
+	block, rest := pem.Decode([]byte(redeemed.ExchangeKeyPEM))
+	require.NotNil(t, block)
+	require.Empty(t, rest)
+	require.Equal(t, pemTypePrivateKey, block.Type)
+
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	require.NoError(t, err)
+
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	require.True(t, ok)
+	require.True(t, key.PublicKey.Equal(chain[0].PublicKey))
+
+	// The P8 observable survives: all six frozen selectors are still answered.
+	require.Len(t, redeemed.Selectors, 6)
+	require.Contains(t, redeemed.Selectors, attestor.Selector("incus:uuid:"+string(guestUUID)))
+
+	// The reference submitted to the Broker API is the vendor type the host
+	// agent's allowlist and attestor plugin agree on, and it claims only the
+	// server-resolved binding.
+	require.Len(t, fixture.exchange.references, 1)
+	require.Equal(t, referenceTypeURL, fixture.exchange.references[0].GetTypeUrl())
+
+	claim := new(incusv1alpha1.IncusInstanceReference)
+	require.NoError(t, fixture.exchange.references[0].UnmarshalTo(claim))
+	require.Equal(t, string(guestUUID), claim.GetInstanceUuid())
+	require.Equal(t, string(guestProject), claim.GetProject())
+
+	// Nothing about the key reached the log, and the answer that carried it was
+	// never logged as a body.
+	require.NotContains(t, fixture.logs.String(), redeemed.ExchangeKeyPEM)
+	require.NotContains(t, fixture.logs.String(), "PRIVATE KEY")
+	require.Contains(t, fixture.logs.String(), string(exchangeSPIFFEID))
+}
+
+// parseCertificatePEM decodes every certificate block in encoded.
+func parseCertificatePEM(t *testing.T, encoded string) []*x509.Certificate {
+	t.Helper()
+
+	var certificates []*x509.Certificate
+
+	rest := []byte(encoded)
+
+	for {
+		var block *pem.Block
+
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+
+		require.Equal(t, pemTypeCertificate, block.Type)
+
+		certificate, err := x509.ParseCertificate(block.Bytes)
+		require.NoError(t, err)
+
+		certificates = append(certificates, certificate)
+	}
+
+	require.Empty(t, rest)
+
+	return certificates
+}
+
+func TestRedeemBurnsTheNonceWhenTheExchangeFetchFails(t *testing.T) {
+	tests := map[string]struct {
+		failure    error
+		wantStatus int
+		wantCode   string
+		wantClass  string
+	}{
+		"reference type outside the broker allowlist": {
+			failure:    broker.ErrReferenceTypeDenied,
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   codeInternal,
+			wantClass:  classReferenceTypeDenied,
+		},
+		"no registration entry matches the selector": {
+			failure:    broker.ErrPermissionDenied,
+			wantStatus: http.StatusInternalServerError,
+			wantCode:   codeInternal,
+			wantClass:  classPermissionDenied,
+		},
+		"broker socket unreachable": {
+			failure:    broker.ErrTransport,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   codeUnavailable,
+			wantClass:  classTransport,
+		},
+		"broker call timed out": {
+			failure:    broker.ErrTimeout,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   codeUnavailable,
+			wantClass:  classTimeout,
+		},
+		"stream ended without an SVID": {
+			failure:    broker.ErrNoSVID,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   codeUnavailable,
+			wantClass:  classNoSVID,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			fixture := newFixture(t, memory.New())
+			fixture.reader.EXPECT().
+				ReadInstanceByUUID(mock.Anything, guestUUID, mock.Anything).
+				Return(liveRecord(), nil)
+
+			id, secret := fixture.mint(t)
+			fixture.writer.EXPECT().
+				ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+			fixture.exchange.err = test.failure
+
+			response := fixture.post(t, redeemPath, redeemBody(id, secret))
+
+			// A Broker failure is this service's fault, never a refused
+			// presentation: the guest presented a valid nonce and is owed an
+			// answer that says so.
+			require.Equal(t, test.wantStatus, response.Code, response.Body.String())
+			require.JSONEq(t, `{"error":"`+test.wantCode+`"}`, response.Body.String())
+
+			logs := fixture.logs.String()
+			require.Contains(t, logs, "nonce consumed but no exchange SVID was issued")
+			require.Contains(t, logs, fieldFailureClass+"="+test.wantClass)
+			require.Contains(t, logs, fieldNonceID+"="+string(id))
+			require.Contains(t, logs, fieldInstanceUUID+"="+string(guestUUID))
+			require.Contains(t, logs, fieldOutcome+"=burned")
+			require.NotContains(t, logs, fieldOutcome+"=denied")
+			require.NotContains(t, logs, "bootstrap request denied")
+			require.NotContains(t, logs, secret)
+
+			// The nonce really was consumed before the Broker was called, and the
+			// bootstrap key really was cleared: this guest is owed a fresh nonce,
+			// not a retry.
+			require.Contains(t, logs, "bootstrap key cleared")
+
+			replay := fixture.post(t, redeemPath, redeemBody(id, secret))
+			require.Equal(t, http.StatusConflict, replay.Code, replay.Body.String())
+			require.JSONEq(t, `{"error":"`+codeConflict+`"}`, replay.Body.String())
+			require.Len(t, fixture.exchange.references, 1,
+				"a spent nonce never reaches the Broker API a second time")
+		})
+	}
+}
+
+func TestRedeemBurnsTheNonceWhenTheDeliveredMaterialIsUnusable(t *testing.T) {
+	fixture := newFixture(t, memory.New())
+	fixture.reader.EXPECT().
+		ReadInstanceByUUID(mock.Anything, guestUUID, mock.Anything).
+		Return(liveRecord(), nil)
+
+	id, secret := fixture.mint(t)
+	fixture.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+
+	// An SVID with no private key is structurally useless: x509pop cannot prove
+	// possession without it, so handing the guest the chain alone would be a
+	// success answer to a failed bootstrap.
+	fixture.exchange.svid.KeyDER = nil
+
+	response := fixture.post(t, redeemPath, redeemBody(id, secret))
+	require.Equal(t, http.StatusInternalServerError, response.Code, response.Body.String())
+	require.JSONEq(t, `{"error":"`+codeInternal+`"}`, response.Body.String())
+	require.Contains(t, fixture.logs.String(), fieldFailureClass+"="+classMaterialInvalid)
+}
+
+func TestExchangeKeyPEMNeverPrints(t *testing.T) {
+	const material = "-----BEGIN PRIVATE KEY-----\nc2VjcmV0IGtleSBtYXRlcmlhbA==\n-----END PRIVATE KEY-----\n"
+
+	key := newExchangeKeyPEM([]byte(material))
+
+	for _, rendered := range []string{
+		fmt.Sprintf("%v", key),
+		fmt.Sprintf("%s", key),
+		fmt.Sprintf("%q", key),
+		fmt.Sprintf("%#v", key),
+		fmt.Sprintf("%d", key),
+		fmt.Sprintf("%x", key),
+		key.String(),
+		key.GoString(),
+		fmt.Sprintf("%v", []exchangeKeyPEM{key}),
+		fmt.Sprintf("%v", redeemResponse{ExchangeKeyPEM: key}),
+		fmt.Sprintf("%v", &key),
+		fmt.Errorf("exchange failed: %v", key).Error(),
+	} {
+		require.NotContains(t, rendered, material)
+		require.NotContains(t, rendered, "PRIVATE KEY")
+		require.Contains(t, rendered, redactedExchangeKey)
+	}
+
+	// slog is the path that actually matters: every failure record this service
+	// writes goes through it.
+	var logged bytes.Buffer
+
+	logger := slog.New(slog.NewJSONHandler(&logged, nil))
+	logger.InfoContext(t.Context(), "exchange", "key", key, "response",
+		redeemResponse{NonceID: "0123456789abcdef", ExchangeKeyPEM: key})
+
+	require.NotContains(t, logged.String(), material)
+	require.NotContains(t, logged.String(), "PRIVATE KEY")
+	require.Contains(t, logged.String(), redactedExchangeKey)
+
+	// The one deliberate reveal is the marshalling that answers the guest.
+	encoded, err := json.Marshal(key)
+	require.NoError(t, err)
+	require.JSONEq(t, strconv.Quote(material), string(encoded))
+}
+
+func TestRedeemClearsTheBootstrapKeyOnceBeforeTheExchangeFetch(t *testing.T) {
+	fixture := newFixture(t, memory.New())
+	fixture.reader.EXPECT().
+		ReadInstanceByUUID(mock.Anything, guestUUID, mock.Anything).
+		Return(liveRecord(), nil)
+
+	id, secret := fixture.mint(t)
+
+	var order []string
+
+	// Once() is the assertion that the clear is not repeated: mockery fails the
+	// test on a second call, and the reaper leaves consumed records alone, so a
+	// missed clear would never be compensated.
+	fixture.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).
+		RunAndReturn(func(_ context.Context, _ attestor.ProjectName, _ attestor.InstanceName) error {
+			order = append(order, "clear")
+
+			return nil
+		}).Once()
+
+	fixture.exchange.err = broker.ErrTransport
+	fixture.exchange.observe = func() { order = append(order, "fetch") }
+
+	response := fixture.post(t, redeemPath, redeemBody(id, secret))
+	require.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
+	require.Len(t, fixture.exchange.references, 1)
+
+	// The secret left the guest's configuration before the Broker was asked for
+	// anything, so a Broker failure cannot leave a readable value behind.
+	require.Equal(t, []string{"clear", "fetch"}, order)
 }
 
 func TestFailureStatusMapping(t *testing.T) {
@@ -804,6 +1234,24 @@ func TestBootstrapRoundTripOverHTTP(t *testing.T) {
 	redeemed := roundTrip(t, server, redeemPath, redeemBody(response.NonceID, secret))
 	require.Equal(t, http.StatusOK, redeemed.status, redeemed.body)
 	require.NotContains(t, redeemed.body, secret)
+
+	// What the guest gets off the wire is the material it writes to tmpfs and
+	// points x509pop at, so the round trip has to prove all three PEM values
+	// survive the transport, not just the status code.
+	delivered := guestAnswerOf(t, []byte(redeemed.body))
+	require.Equal(t, exchangeSPIFFEID, delivered.ExchangeSPIFFEID)
+	require.Len(t, parseCertificatePEM(t, delivered.ExchangeCertChainPEM), 1)
+	require.Len(t, parseCertificatePEM(t, delivered.ExchangeBundlePEM), 1)
+
+	block, _ := pem.Decode([]byte(delivered.ExchangeKeyPEM))
+	require.NotNil(t, block)
+
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	require.NoError(t, err)
+
+	deliveredKey, ok := key.(*ecdsa.PrivateKey)
+	require.True(t, ok)
+	require.True(t, fixture.signer.PublicKey.Equal(deliveredKey.Public()))
 
 	// The nonce is single use: the same presentation over the same transport is
 	// refused now that the record is consumed.
@@ -1313,6 +1761,9 @@ func brokerArgs(tokenPath string) []string {
 		"-bootstrap-cert", "/tls/bootstrap.crt",
 		"-bootstrap-key", "/tls/bootstrap.key",
 		"-project", "spike-spiffe",
+		"-broker-socket", testBrokerSocket,
+		"-workload-api-socket", testWorkloadAPISocket,
+		"-agent-spiffe-id", testAgentSPIFFEID,
 	}
 	if tokenPath != "" {
 		args = append(args, "-mint-token-file", tokenPath)

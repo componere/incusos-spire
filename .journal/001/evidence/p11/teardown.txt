@@ -1,0 +1,78 @@
+P11 ordered teardown
+host=ovh-incusos
+
+=== class 1: guest instances, snapshots, clones, volumes ===
+Deleted spike-spiffe/spike-guest-a with --force.
+Deleted spike-spiffe/spike-guest-b with --force.
+Preflight snapshot counts were zero for both guests.
+Remaining spike-spiffe instances: spike-authz-probe only.
+Remaining volumes named spike-guest-a or spike-guest-b: none.
+Result: PASS
+
+=== class 2: registration entries, nodes, broker ===
+Deleted exchange entry 6261b897-9852-4740-a80f-2dbd05979597.
+Deleted broker entry 718f0f2e-1430-4ea8-9179-ae7223724f6b.
+Evicted guest node spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a.
+Evicted host node spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0.
+Post-delete server state: Found 0 entries; No attested agents found.
+Deleted default/spike-broker with --force.
+Deleted default/custom/spike-broker-state.
+Remaining broker-named instances and volumes: none.
+Result: PASS
+
+=== class 3: host agent and DevID state ===
+Detached device state from default/spike-p3-stage because it referenced spike-spire-agent-state.
+Deleted default/spire-agent with --force.
+Deleted default/custom/spike-spire-agent-state, including DevID blobs and retained negative-case material.
+No spire-agent instance or spike-spire-agent-state volume remains.
+No cryptographic-erasure claim is made.
+Result: PASS
+
+=== class 4: SPIRE server and spike CA state ===
+Detached device ca from default/spike-p3-stage because it referenced spike-ca-state.
+Deleted default/spire-server with --force after its entries and nodes were removed.
+Deleted default/custom/spike-spire-server-state.
+Deleted default/custom/spike-ca-state.
+No SPIRE server, server-state volume, or spike-CA volume remains.
+No cryptographic-erasure claim is made.
+Result: PASS
+
+=== class 5: Incus project, authorization, credentials, images, residue ===
+Unset authorization.client.tls-restricted before authorization.scriptlet.
+Removed restricted trust identities spike-attestor-ro and spike-bootstrap-writer.
+Deleted spike-spiffe/spike-authz-probe, default/spike-p3-stage, and default/spike-probe with --force.
+Deleted all three spike-spiffe project images, then deleted project spike-spiffe.
+Deleted recorded default-project images cc908044b88b..., f005c3b83cc4..., and the remaining 7fb36bfa2278... guest image.
+Deleted $HOME/.spike-incusos-creds without reading credential contents.
+Post-delete workloads across all projects: none.
+Post-delete spike-/spire-named volumes: none.
+Post-delete spike projects: none.
+Post-delete spike trust identities: none.
+Recorded spike image fingerprints remaining: none.
+authorization.client.tls-restricted=UNSET
+authorization.scriptlet=UNSET
+local credential directory=ABSENT
+No workload remains on which a user.* key can be set.
+Result: PASS
+
+=== class 6: TPM allocation record and namespace diff ===
+P1 allocation record contained no persistent object or NV index.
+Read-only inspection found persistent handle 0x81000001 only.
+Read-only inspection found NV indices 0x01C00002 and 0x01C0000A only.
+Counts match P0: TPM2_PT_HR_PERSISTENT=0x1; TPM2_PT_HR_NV_INDEX=0x2.
+Safety state: ownerAuthSet=0, endorsementAuthSet=0, lockoutAuthSet=0, inLockout=0, lockout counter=0x0, max auth failures=0xA.
+Namespace diff against P0: empty.
+No TPM object was evicted or undefined; no authenticated TPM command ran.
+Temporary spike-tpm-inspect container and pulled image deleted; workload list returned to empty.
+Result: PASS
+
+=== class 7: final reboot, invariants, and baseline diff ===
+Issued the forced IncusOS reboot at 2026-08-17T20:13:41Z.
+The API was unavailable at 2026-08-17T20:14:10Z and returned at 2026-08-17T20:14:58Z with an empty workload list.
+Post-reboot tpm_status=ok; system_state_is_trusted=true; Secure Boot enabled.
+Root and swap are unlocked (TPM).
+All four Secure Boot certificate fingerprints match P0.
+Post-reboot read-only TPM inventory again matched P0 exactly: persistent handle 0x81000001; NV indices 0x01C00002 and 0x01C0000A; counts 1 and 2; lockout counter 0.
+The temporary final TPM inspector and its pulled image were deleted.
+Final workload list and every recorded spike-resource query are empty.
+Result: PASS — P11 teardown acceptance satisfied.

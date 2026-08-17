@@ -1,0 +1,37 @@
+P11 read-only TPM namespace comparison
+host=ovh-incusos
+tool=tpm2-tools 5.7-1
+TCTI=device:/dev/tpmrm0
+
+=== P0 baseline ===
+persistent handles:
+- 0x81000001
+NV indices:
+- 0x01C00002
+- 0x01C0000A
+TPM2_PT_HR_PERSISTENT=0x1
+TPM2_PT_HR_NV_INDEX=0x2
+TPM2_PT_LOCKOUT_COUNTER=0x0
+TPM2_PT_MAX_AUTH_FAIL=0xA
+inLockout=0
+
+=== P11 before final reboot ===
+persistent handles:
+- 0x81000001
+NV indices:
+- 0x01C00002
+- 0x01C0000A
+TPM2_PT_HR_PERSISTENT=0x1
+TPM2_PT_HR_NV_INDEX=0x2
+TPM2_PT_LOCKOUT_COUNTER=0x0
+TPM2_PT_MAX_AUTH_FAIL=0xA
+ownerAuthSet=0
+endorsementAuthSet=0
+lockoutAuthSet=0
+inLockout=0
+
+Diff: empty.
+No spike object existed in the P1 allocation record, so no object was evicted or undefined.
+Commands were limited to read-only tpm2_getcap calls. No authenticated TPM command ran.
+The temporary spike-tpm-inspect container and pulled image were deleted. Workload list returned to empty.
+Result: PASS

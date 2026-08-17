@@ -1,0 +1,54 @@
+P11 teardown preflight
+captured=2026-08-17T20:07:00Z
+host=ovh-incusos
+
+=== host safety ===
+tpm_status=ok
+system_state_is_trusted=true
+secure_boot_enabled=true
+root=unlocked (TPM)
+swap=unlocked (TPM)
+secure_boot_PK=26dce4dbb3de2d72bd16ae91a85cfeda84535317d3ee77e0d4b2d65e714cf111
+secure_boot_KEK=9a42866f496834bde7e1b26a862b1e1b6dea7b78b91a948aecfc4e6ef79ea6c1
+secure_boot_db_2025=21b6f423cf80fe6c436dfea0683460312f276debe2a14285bfdc22da2d00fc20
+secure_boot_db_2026=2243c49fcf6f84fe670f100ecafa801389dc207536cb9ca87aa2c062ddebfde5
+
+=== live instances ===
+default/spike-broker=RUNNING CONTAINER
+default/spike-p3-stage=RUNNING CONTAINER(APP)
+default/spike-probe=RUNNING CONTAINER(APP)
+default/spire-agent=RUNNING CONTAINER(APP)
+default/spire-server=RUNNING CONTAINER(APP)
+spike-spiffe/spike-authz-probe=RUNNING CONTAINER(APP)
+spike-spiffe/spike-guest-a=RUNNING VIRTUAL-MACHINE
+spike-spiffe/spike-guest-b=RUNNING VIRTUAL-MACHINE
+spike-guest-a snapshots=0
+spike-guest-b snapshots=0
+
+=== custom volumes ===
+default/spike-broker-state
+default/spike-ca-state
+default/spike-spire-agent-state
+default/spike-spire-server-state
+
+=== project and credentials ===
+project=spike-spiffe
+trust_identity=spike-attestor-ro fingerprint=6ebaf5eb4cc9e003acb6a98ef7cdd24b1d2d7a00ef59f5fb9b654e3fa634db80 project=spike-spiffe
+trust_identity=spike-bootstrap-writer fingerprint=afd4f608e0f0e8aabce5e42a6dba33ca7ff3b76defad3f0e287f46c5136d9d84 project=spike-spiffe
+authorization.client.tls-restricted=SET
+authorization.scriptlet=SET
+local_credential_directory=PRESENT
+spike-guest-a user.spiffe-bootstrap=CLEAR
+spike-guest-b user.spiffe-bootstrap=CLEAR
+
+=== SPIRE state ===
+nodes=2
+host_node=spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+guest_node=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+entries=2
+broker_entry=718f0f2e-1430-4ea8-9179-ae7223724f6b
+exchange_entry=6261b897-9852-4740-a80f-2dbd05979597
+broker_service=active
+broker_sha256=4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45
+
+No secret values were recorded. Recovery-key fields and credential contents were not selected.

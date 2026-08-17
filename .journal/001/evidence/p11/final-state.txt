@@ -1,0 +1,51 @@
+P11 final post-teardown state
+host=ovh-incusos
+reboot_command_utc=2026-08-17T20:13:41Z
+first_unavailable_check_utc=2026-08-17T20:14:10Z
+api_ready_utc=2026-08-17T20:14:58Z
+post_reboot_check_utc=2026-08-17T20:15:12Z
+
+=== post-reboot IncusOS safety ===
+tpm_status=ok
+system_state_is_trusted=true
+secure_boot_enabled=true
+root=unlocked (TPM)
+swap=unlocked (TPM)
+secure_boot_PK=26dce4dbb3de2d72bd16ae91a85cfeda84535317d3ee77e0d4b2d65e714cf111
+secure_boot_KEK=9a42866f496834bde7e1b26a862b1e1b6dea7b78b91a948aecfc4e6ef79ea6c1
+secure_boot_db_2025=21b6f423cf80fe6c436dfea0683460312f276debe2a14285bfdc22da2d00fc20
+secure_boot_db_2026=2243c49fcf6f84fe670f100ecafa801389dc207536cb9ca87aa2c062ddebfde5
+All values match P0.
+
+=== post-reboot TPM namespace ===
+persistent handles:
+- 0x81000001
+NV indices:
+- 0x01C00002
+- 0x01C0000A
+TPM2_PT_HR_PERSISTENT=0x1
+TPM2_PT_HR_NV_INDEX=0x2
+TPM2_PT_LOCKOUT_COUNTER=0x0
+TPM2_PT_MAX_AUTH_FAIL=0xA
+ownerAuthSet=0
+endorsementAuthSet=0
+lockoutAuthSet=0
+inLockout=0
+Diff against P0: empty.
+
+=== final Incus and workstation residue ===
+workloads across all projects=0
+spike-/spire-named volumes=0
+spike projects=0
+spike trust identities=0
+recorded spike image fingerprints=0
+authorization.client.tls-restricted=UNSET
+authorization.scriptlet=UNSET
+$HOME/.spike-incusos-creds=ABSENT
+temporary TPM inspector containers=0
+temporary Debian inspector images=0
+managed networks=incusbr0 (bridge), uplink (physical), matching P0
+final independent state query=2026-08-17T20:20:51Z
+
+No recovery-key field or secret credential content was selected or recorded.
+Result: PASS — P11 teardown acceptance satisfied.

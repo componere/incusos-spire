@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial) · P6 (schema frozen) · **P7 / H6 PROVEN** · **P8 / H7 PROVEN** · **P9 / H8 PROVEN 2026-08-17** · **P10 COMPLETE / ACCEPTED 2026-08-17** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md), [`p8`](evidence/p8/EVIDENCE.md) + [`guest brief`](evidence/p8/GUEST_SOCK_BRIEF.md) + [`security`](evidence/p8/SECURITY_FINDINGS.md), [`p9`](evidence/p9/EVIDENCE.md) + [`x509pop`](evidence/p9/X509POP_BRIEF.md) + [`security`](evidence/p9/SECURITY_FINDINGS.md), [`p10`](evidence/p10/p10-matrix.md)
+**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial) · P6 (schema frozen) · **P7 / H6 PROVEN** · **P8 / H7 PROVEN** · **P9 / H8 PROVEN 2026-08-17** · **P10 COMPLETE / ACCEPTED 2026-08-17** · **P11 COMPLETE / NO-GO 2026-08-17** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md), [`p8`](evidence/p8/EVIDENCE.md) + [`guest brief`](evidence/p8/GUEST_SOCK_BRIEF.md) + [`security`](evidence/p8/SECURITY_FINDINGS.md), [`p9`](evidence/p9/EVIDENCE.md) + [`x509pop`](evidence/p9/X509POP_BRIEF.md) + [`security`](evidence/p9/SECURITY_FINDINGS.md), [`p10`](evidence/p10/p10-matrix.md), [`p11 matrix`](evidence/p11/EVIDENCE_MATRIX.md) + [`decision`](evidence/p11/GO_NO_GO.md) + [`teardown`](evidence/p11/teardown.txt)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -276,6 +276,7 @@ Legend: every phase records evidence under `.journal/001/evidence/pN-*/` (journa
 - **Exact work:** Execute the Teardown Inventory (Appendix E) in order; final host reboot; verify: empty workload list (except anything explicitly retained by decision), `tpm_status: ok`, `system_state_is_trusted: true`, root/swap `unlocked (TPM)`, TPM handle/NV inventory identical to `p0-tpm-inventory.md`. Compile the evidence matrix (Appendix B) and write the go/no-go record.
 - **Acceptance:** Post-teardown inventory diff is empty; go/no-go record complete.
 - **Cleanup owner:** Executor; this phase *is* cleanup.
+- **Observed result — 2026-08-17:** Teardown **PASS**; post-reboot baseline diff empty. Architecture **NO-GO for adoption as-is** because the unused bearer risk is not accepted, Incus export/import duplicates authoritative anchors, and the bootstrap writer's residual authority is not acceptable. See [`evidence/p11/GO_NO_GO.md`](evidence/p11/GO_NO_GO.md).
 
 ---
 
@@ -426,6 +427,20 @@ Recorded objects (append at creation time):
 | — | Test workload entries `/guest/demo` and `/guest/demo-app` (`unix:uid:0`, `unix:uid:989`) | P9 | Deleted in-phase; `Found 2 entries` verified |
 | — | Broker binary redeployed at sha256 `4ed87f92…fa45` (was `bd46b32d…4728`) | P9 | Supersedes the P8 deployment; same container and volume |
 | — | Durable code `609885e`, `3f5b7f6` on `feat/incus-attestor` | P9 | Product code, not teardown |
+
+P11 completion — 2026-08-17:
+
+| Class | Final result |
+|---:|---|
+| 1 | Both guest VMs, their root volumes, snapshots, and clones removed; no guest-named volume remains |
+| 2 | Both registration entries deleted; guest then host node evicted; broker container and state volume removed |
+| 3 | Host agent container and `spike-spire-agent-state` removed; no cryptographic-erasure claim |
+| 4 | SPIRE Server, server state, and spike CA state removed; no cryptographic-erasure claim |
+| 5 | Spike project, probe/staging workloads, restricted trust identities, authorization hooks, recorded images, and local credential directory removed |
+| 6 | P1 allocated no TPM object; read-only persistent/NV diff against P0 is empty before and after the final reboot |
+| 7 | Final reboot completed; workloads and spike residue are empty; Secure Boot, trusted system state, TPM unlock, certificate fingerprints, hierarchy flags, and zero lockout counter match P0 |
+
+Nothing is retained on the host. Durable code on `feat/incus-attestor` is outside the teardown boundary.
 
 ## Appendix F — Primary References
 

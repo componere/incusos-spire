@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/meigma/template-go/internal/templateinfo"
+	"github.com/componere/incusos-spire/internal/templateinfo"
 )
 
 // Config contains runtime settings used by the starter CLI.

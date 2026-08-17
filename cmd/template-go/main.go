@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/meigma/template-go/internal/cli"
+	"github.com/componere/incusos-spire/internal/cli"
 )
 
 //nolint:gochecknoglobals // GoReleaser injects these values with ldflags during releases.

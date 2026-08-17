@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/meigma/template-go/internal/config"
-	"github.com/meigma/template-go/internal/templateinfo"
+	"github.com/componere/incusos-spire/internal/config"
+	"github.com/componere/incusos-spire/internal/templateinfo"
 )
 
 // BuildInfo describes linker-injected build metadata printed by --version.

@@ -1,0 +1,108 @@
+### case-05-01 — action 1 (state + scratch) and action 2 (Q1: B's socket sees only B)
+### 2026-08-17T18:07:26Z
+
+Tracing/body capture posture for every step of case 5:
+  * no 'set -x' anywhere; no 'curl -v'; no '--trace'; no '--trace-ascii'
+  * every response body is written with --output to a mode-0600 file inside a tmpfs
+    scratch dir; only --write-out '%{http_code}' reaches stdout
+  * no credential value is ever passed in argv or held in a shell variable
+  * no successful redemption body is captured into evidence (Appendix D)
+
+--- 1.1 A and B: names, UUIDs, generations ---
+spike-guest-a  uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=c32efc7b-f3d8-4637-9818-f8906c35543a status=RUNNING
+spike-guest-b  uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 status=RUNNING
+
+--- 1.2 host node, broker, registration entries ---
+$ incus exec ovh-incusos:spire-server -- spire-server agent list
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 18:41:53 +0000 UTC
+Serial number     : 110372763475192610648223717709953085556
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 18:55:31 +0000 UTC
+Serial number     : 142664646892380702363741184904059716611
+Can re-attest     : true
+Agent version     : 1.15.2
+
+$ incus exec ovh-incusos:spire-server -- spire-server entry show
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+$ incus exec ovh-incusos:spike-broker -- sha256sum /usr/local/bin/incus-spiffe-broker
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+broker listener: https://10.55.156.44:8443  (mint /v1alpha1/nonce, redeem /v1alpha1/redeem)
+spire-server:    10.55.156.67:8081
+
+NOTE: the only exchange registration entry in the server is scoped to A's UUID
+      (selector incus:uuid:a955ca30-...). There is NO entry for B's UUID
+      a4fec3ea-.... That asymmetry is deliberate and is what makes action 4
+      observable: a correctly-resolved B binding has no entry to issue against.
+
+--- 1.3 both bootstrap keys clear before anything is minted ---
+spike-guest-a user.spiffe-bootstrap: <unset>  (clear)
+spike-guest-b user.spiffe-bootstrap: <unset>  (clear)
+
+--- 1.4 mode-0700 tmpfs scratch inside guest B ---
+$ incus exec spike-guest-b -- sh -c 'umask 077; mkdir -p /run/p10c5; mount -t tmpfs -o size=1m,mode=0700,nosuid,nodev,noexec tmpfs /run/p10c5'
+/run/p10c5 tmpfs rw,nosuid,nodev,noexec,relatime,size=1024k,mode=700,inode64
+drwx------ 2 root root 40 Aug 17 18:07 /run/p10c5
+scratch contents (must be empty):
+  <empty>
+
+--- 2.1 mint ONE bootstrap value for A; it is left UNREDEEMED for action 5 ---
+$ incus exec spike-broker -- env BROKER_URL=https://10.55.156.44:8443 BROKER_CACERT=/state/tls/spike-root-ca.pem MINT_AUTH_TOKEN_FILE=/state/auth/mint-token /root/p8/operator-mint.sh a955ca30-a0dc-4087-a369-37d53d389c5a spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=d674d58ac0450aa9bbe3242daf9d3188
+  expires_at=2026-08-17T18:18:21.141752703Z
+  instance_name=spike-guest-a
+  generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=d674d58ac0450aa9bbe3242daf9d3188 expires_at=2026-08-17T18:18:21.141752703Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+  recorded (public fields only): nonce_id=d674d58ac0450aa9bbe3242daf9d3188
+                                 expires_at=2026-08-17T18:18:21.141752703Z
+  the value itself was never returned to the operator; it exists only in A's
+  user.spiffe-bootstrap. Confirming A now carries an outstanding value:
+  A user.spiffe-bootstrap: PRESENT (outstanding, unredeemed)
+
+--- 2.2 Q1: from B, query user.spiffe-bootstrap through B's OWN /dev/incus/sock ---
+$ incus exec spike-guest-b -- curl --unix-socket /dev/incus/sock --output <0600 tmpfs file> --write-out '%{http_code}' http://custom.socket/1.0/config/user.spiffe-bootstrap
+socket_read(B, user.spiffe-bootstrap): HTTP 404
+response_bytes=10
+b_sees_A_outstanding_value=false
+b_sees_any_bootstrap_payload=false
+
+B's own visible guest-API config namespace (key names only, values never printed):
+socket_read(B, /1.0/config): HTTP 200
+visible_key_count=0
+visible_keys=
+
+the guest API endpoint B is talking to identifies B, not A:
+{"api_version":"1.0","instance_type":"virtual-machine","state":"Started"}

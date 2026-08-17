@@ -1,0 +1,35 @@
+### Case 9 — step 4c: what the broker's attestor actually derives for the RECREATED (GEN2) instance
+2026-08-17T17:06:26Z
+A second throwaway registration entry is created for the GEN2 UUID so a real redemption can complete;
+both throwaway entries are deleted in the cleanup step.
+
+Entry ID                : 346e448d-0013-4a2d-b6d6-aee4134f2329
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/8b7a4ddc-c218-4c48-a79b-fe1f377e8734
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:8b7a4ddc-c218-4c48-a79b-fe1f377e8734
+
+
+--- mint for GEN2, then redeem. The redeem response carries exchange PRIVATE KEY material, so it is NEVER
+--- printed: only an explicit whitelist of non-secret field names is grepped out of it, and the file is removed.
+mint HTTP 201  body: {"nonce_id":"976a1997c5f7d17ddd7ac199d9dc744a","expires_at":"2026-08-17T17:16:34.05172504Z","instance_uuid":"8b7a4ddc-c218-4c48-a79b-fe1f377e8734","instance_name":"spike-p10-c9-recycle","generation":"8b7a4ddc-c218-4c48-a79b-fe1f377e8734","project":"spike-spiffe"}
+
+$ capture GEN2 payload into a mode-0600 file (never printed)
+redeem HTTP 200
+whitelisted non-secret fields extracted from the response:
+"nonce_id":"976a1997c5f7d17ddd7ac199d9dc744a"
+"instance_uuid":"8b7a4ddc-c218-4c48-a79b-fe1f377e8734"
+"instance_name":"spike-p10-c9-recycle"
+"generation":"8b7a4ddc-c218-4c48-a79b-fe1f377e8734"
+"project":"spike-spiffe"
+"exchange_spiffe_id":"spiffe://spike.incus.internal/spire-exchange/incus/8b7a4ddc-c218-4c48-a79b-fe1f377e8734"
+"exchange_expires_at":"2026-08-17T17:08:33Z"
+"selectors":["incus:uuid:8b7a4ddc-c218-4c48-a79b-fe1f377e8734","incus:generation:8b7a4ddc-c218-4c48-a79b-fe1f377e8734","incus:project:spike-spiffe","incus:type:container","incus:name:spike-p10-c9-recycle","incus:image:f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16"]
+secret-bearing fields present (names only, values withheld):
+  exchange_cert_chain_pem: present, length 16 fields in body
+  exchange_key_pem: present, length 16 fields in body
+  exchange_bundle_pem: present, length 16 fields in body
+ls: cannot access '/tmp/p10c9-redeem2.json': No such file or directory
+ls: cannot access '/tmp/p10c9-payload2.json': No such file or directory

@@ -1,0 +1,14 @@
+### Case 9 — step 4b: there is no name-keyed lookup anywhere on the mint path
+2026-08-17T17:06:03Z
+Attempt to mint by NAME alone (the recreated instance's name), and by name+project:
+--- request body: {"instance_name":"spike-p10-c9-recycle","project":"spike-spiffe"}
+HTTP 400  body: {"error":"invalid_request"}
+--- request body: {"name":"spike-p10-c9-recycle","project":"spike-spiffe"}
+HTTP 400  body: {"error":"invalid_request"}
+--- request body: {"project":"spike-spiffe"}
+HTTP 400  body: {"error":"invalid_request"}
+
+--- broker log for those three attempts
+{"time":"2026-08-17T17:06:04.063762682Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.44:40626","http_status":400,"code":"invalid_request","reason":"decode request body: json: unknown field \"instance_name\""}
+{"time":"2026-08-17T17:06:04.076391385Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.44:40642","http_status":400,"code":"invalid_request","reason":"decode request body: json: unknown field \"name\""}
+{"time":"2026-08-17T17:06:04.088568626Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.44:40648","http_status":400,"code":"invalid_request","reason":"instance_uuid is required"}

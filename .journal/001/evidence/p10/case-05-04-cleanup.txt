@@ -1,0 +1,217 @@
+### case-05-04 — action 7 (cleanup and final-state proof) + secret scan
+### 2026-08-17T18:12:03Z
+
+--- 7.1 scratch inventory before destruction ---
+  total 52
+  -rw------- 1 root root  123 Aug 17 18:10 a-body.json
+  -rw------- 1 root root  268 Aug 17 18:10 a-payload.json
+  -rw------- 1 root root 3416 Aug 17 18:10 a-resp.json
+  -rw------- 1 root root  267 Aug 17 18:09 b-payload.json
+  -rw------- 1 root root   10 Aug 17 18:08 b-sock-bootstrap.json
+  -rw------- 1 root root    3 Aug 17 18:08 b-sock-config.json
+  -rw------- 1 root root    0 Aug 17 18:09 b-sock.err
+  -rw------- 1 root root  178 Aug 17 18:09 body-claim-a.json
+  -rw------- 1 root root  123 Aug 17 18:09 body-clean.json
+  -rw------- 1 root root 1539 Aug 17 18:10 bundle.pem
+  -rw------- 1 root root  864 Aug 17 18:10 chain.pem
+  -rw------- 1 root root  242 Aug 17 18:10 key.pem
+  -rw------- 1 root root    0 Aug 17 18:09 redeem1.err
+  -rw------- 1 root root    0 Aug 17 18:09 redeem2.err
+  -rw------- 1 root root    0 Aug 17 18:10 redeem3.err
+  -rw------- 1 root root   28 Aug 17 18:09 resp-claim-a.json
+  -rw------- 1 root root   40 Aug 17 18:09 resp-clean.json
+  (a-payload.json + a-body.json + a-resp.json + chain/key/bundle.pem hold real
+   credential material for A; b-payload/body-*/resp-* hold B material)
+
+--- 7.2 shred every scratch file, then unmount the tmpfs ---
+  post-shred contents:
+    <empty>
+  umount /run/p10c5: ok
+  rmdir  /run/p10c5: ok
+  findmnt /run/p10c5: no such mount
+  path exists: no
+
+  residual sweep of the whole guest for any file this case created:
+    /run/p10c5               absent
+    /run/spike-exchange      PRESENT
+    /run/spike-p9            PRESENT
+    /var/lib/spire-agent     absent
+    /tmp/spire-agent         absent
+  /run/spike-exchange listing (pre-existing empty P9 dir, untouched by case 5):
+      <empty>
+  /run/spike-p9 is P9-era residue that predates case 5; its contents, for the record:
+      total 0
+      drwx------  2 root root  40 Aug 17 15:43 .
+      drwxr-xr-x 20 root root 480 Aug 17 18:12 ..
+      credential-shaped content in it: 0 files
+
+  Erasure claim, stated no more strongly than P9 allows: shred on tmpfs overwrites
+  pages and unlinks names; it is not cryptographic erasure, and tmpfs pages can swap.
+  What is proved here is namespace removal — the files are gone, the mount is gone.
+
+--- 7.3 clear both bootstrap keys ---
+  spike-guest-a: already <unset> (broker cleared it on redemption)
+  spike-guest-b: already <unset> (broker cleared it on redemption)
+  verification:
+    spike-guest-a user.spiffe-bootstrap = <unset>
+    spike-guest-b user.spiffe-bootstrap = <unset>
+
+--- 7.4 registration entries unchanged (same two IDs, same SPIFFE IDs, same parents) ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- 7.5 attested agents: A still attested, no new node, no B node ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:10:18 +0000 UTC
+Serial number     : 242286826386577536710300857543115429998
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 18:55:31 +0000 UTC
+Serial number     : 142664646892380702363741184904059716611
+Can re-attest     : true
+Agent version     : 1.15.2
+
+--- 7.6 no extra agent process or agent state on B ---
+spire_agent_processes=0
+any process matching spire: 2
+/var/lib/spire-agent   absent
+/tmp/spire-agent       absent
+/run/p10c5             absent
+listening unix sockets named api.sock: 0
+--- 7.7 guest A still attested and serving (untouched by this case) ---
+spire_agent_processes=1
+workload api socket: srwxrwxrwx 1 root root 0 Aug 17 17:55 /tmp/spire-agent/public/api.sock
+--- 7.8 host stays trusted ---
+{"tpm_status":"ok","system_state_is_trusted":true,"encrypted_volumes":["root=unlocked (TPM)","swap=unlocked (TPM)"],"secure_boot_enabled":true}
+(only these four fields are extracted; the security endpoint also returns recovery-key
+ material, which is never rendered into this transcript — Appendix D.)
+
+  the '2' in 7.6 is the probe seeing itself; resolved by listing the matches:
+    1679 sh -c pgrep -af spire | sed "s/^/    /"; echo "    ^ both lines are this probe s own sh -c and pgrep argv, which contain the string spire."; echo "    real spire-agent binaries running in B: $(pgrep -x spire-agent | wc -l)"
+    ^ both lines are this probe s own sh -c and pgrep argv, which contain the string spire.
+    real spire-agent binaries running in B: 0
+
+  Note on 7.5: the tpm_devid host node's serial and expiry moved (serial
+  110372763475192610648223717709953085556 -> 242286826386577536710300857543115429998,
+  expiry 18:41:53 -> 19:10:18) between 1.2 and 7.5. That is ordinary node-SVID
+  rotation of the physically attested host agent on its own schedule, not an effect
+  of this case. The SPIFFE ID is byte-identical, and guest A's x509pop node is
+  unchanged in both ID and serial (142664646892380702363741184904059716611).
+
+==========================================================================
+SECRET SCAN — case 5 (the five files this unit wrote)
+2026-08-17T18:14:50Z
+==========================================================================
+
+Scope: only the five case-05 files. The rest of the p10 directory belongs to
+other P10 units and is deliberately not claimed here.
+
+Files scanned (5):
+  case-05-wrong-instance.md
+  case-05-01-guest-socket.txt
+  case-05-02-own-material.txt
+  case-05-03-deliberate-transfer.txt
+  case-05-04-cleanup.txt
+
+Nine patterns, one per Appendix D forbidden class, are read from the sibling file
+secret-scan-patterns.txt and referenced by number only. They are NOT inlined here,
+because PART 5 re-scans this very report and a report quoting its own regexes
+cannot be cleanly re-scanned. The scanner prints a pattern number, a hit count and
+file:line — never matching text.
+
+=== PART 1: POSITIVE CONTROL
+A file containing a real instance of all nine classes is planted OUTSIDE the evidence
+tree at /tmp/p10c5-scan/planted.txt and the same scanner is run over it. All nine must HIT.
+HIT   pattern#1  n=2  at: planted.txt:1 planted.txt:8 
+HIT   pattern#2  n=1  at: planted.txt:9 
+HIT   pattern#3  n=1  at: planted.txt:3 
+HIT   pattern#4  n=1  at: planted.txt:4 
+HIT   pattern#5  n=1  at: planted.txt:5 
+HIT   pattern#6  n=1  at: planted.txt:6 
+HIT   pattern#7  n=1  at: planted.txt:7 
+HIT   pattern#8  n=1  at: planted.txt:8 
+HIT   pattern#9  n=2  at: planted.txt:2 planted.txt:8 
+positive-control exit=1   (non-zero, all nine HIT => the scanner really detects every class)
+
+=== PART 2: REAL SCAN over this unit's five evidence files
+clean pattern#1  n=0
+clean pattern#2  n=0
+clean pattern#3  n=0
+clean pattern#4  n=0
+clean pattern#5  n=0
+clean pattern#6  n=0
+clean pattern#7  n=0
+clean pattern#8  n=0
+clean pattern#9  n=0
+real-scan exit=0   (0 = clean)
+
+=== PART 3: live comparison against the actual operator bearer token
+The token is streamed from the broker container straight into 'grep -F -q -f -'; it is
+never written to disk here and never printed.
+clean: the operator bearer token appears in none of the scanned files (grep -F exit 1 = no match)
+
+=== PART 4: host encryption / pool recovery keys must not appear
+Both key classes are streamed from the IncusOS security endpoint straight into
+'grep -F -q -f -'; neither is written to disk or printed.
+clean: no host encryption or pool recovery key appears in any scanned file
+
+=== PART 5: re-scan of all five files, appended after PARTS 1-4 landed in this report
+clean pattern#1  n=0
+clean pattern#2  n=0
+clean pattern#3  n=0
+clean pattern#4  n=0
+clean pattern#5  n=0
+clean pattern#6  n=0
+clean pattern#7  n=0
+clean pattern#8  n=0
+clean pattern#9  n=0
+final re-scan exit=0   (0 = the report itself carries no secret-shaped text)
+
+The planted positive control was shredded and /tmp/p10c5-scan removed after PART 5:
+  ls: cannot access '/tmp/p10c5-scan': No such file or directory
+It was never inside the repository or the evidence tree.
+
+--- 7.9 case 5 closing state ---
+  scratch, payload, extracted files, tmpfs : destroyed and unmounted (7.2)
+  A / B bootstrap keys                     : <unset> (7.3)
+  registration entries                     : unchanged, 718f0f2e-… and 6261b897-… (7.4)
+  attested agents                          : 2 — tpm_devid host + A's x509pop node (7.5)
+  extra agent process / state on B         : none (7.6)
+  guest A                                  : attested, Workload API serving (7.7)
+  host                                     : tpm_status ok, trusted, TPM-unlocked (7.8)
+  secret scan over the five case-05 files  : clean, with a nine-class positive control
+  second SPIRE agent started               : none, at any point in this case
+
+=== PART 6: re-scan after case-05-02-own-material.txt line 40 was corrected
+The echoed command line for submission 4.1 originally showed a stdin form; it was
+rewritten to the exact command that ran. No output or observation changed.
+clean pattern#1  n=0
+clean pattern#2  n=0
+clean pattern#3  n=0
+clean pattern#4  n=0
+clean pattern#5  n=0
+clean pattern#6  n=0
+clean pattern#7  n=0
+clean pattern#8  n=0
+clean pattern#9  n=0
+post-correction re-scan exit=0   (0 = clean)

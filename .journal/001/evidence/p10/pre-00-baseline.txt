@@ -1,0 +1,40 @@
+### P10 batch (cases 8 and 9) — pre-state baseline
+2026-08-17T17:00:12Z
+
+$ incus list ovh-incusos: --all-projects --format csv -c nstL --columns=n,s,t
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+
+$ incus project list ovh-incusos: --format csv -c n
+default (current)
+spike-spiffe
+
+$ incus storage volume list ovh-incusos:local --format csv -c ntu
+7fb36bfa227889b8942b10efe53c3476390791668da093a96ccc09a7f3b5b1f5,image,1
+a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622,image,1
+backups,custom,1
+cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e,image,1
+f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16,image,1
+images,custom,1
+logs,custom,1
+spike-broker,container,1
+spike-broker-state,custom,1
+spike-ca-state,custom,1
+spike-p3-stage,container,1
+spike-probe,container,1
+spike-spire-agent-state,custom,3
+spike-spire-server-state,custom,1
+spire-agent,container,1
+spire-server,container,1
+
+$ incus image list ovh-incusos: --format csv -c fdt
+7fb36bfa2278,Debian trixie amd64 (20260817_05:24),CONTAINER
+a5cadb6ee911,ghcr.io/spiffe/spire-agent (OCI),CONTAINER
+cc908044b88b,ghcr.io/spiffe/spire-server (OCI),CONTAINER
+f005c3b83cc4,docker.io/library/debian (OCI),CONTAINER

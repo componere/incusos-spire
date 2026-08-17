@@ -1,0 +1,11 @@
+### Case 9 — step 1: create the throwaway with a distinctive name
+2026-08-17T17:03:49Z
+instance type: CONTAINER, in project spike-spiffe (the broker's configured project) so the real mint path resolves it.
+
+$ incus launch docker:debian:trixie ovh-incusos:spike-p10-c9-recycle --project spike-spiffe -c oci.entrypoint='sleep infinity'
+Launching ovh-incusos:spike-p10-c9-recycle
+(exit 0)
+C9-GEN1 after create | name=spike-p10-c9-recycle project=spike-spiffe type=container status=Running location=none created_at=2026-08-17T17:03:50.766011664Z uuid=3bfe33a9-3b7f-42d8-9d8a-70d3cd754183 generation=3bfe33a9-3b7f-42d8-9d8a-70d3cd754183 base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+$ incus config get ovh-incusos:spike-p10-c9-recycle user.spiffe-bootstrap --project spike-spiffe  (must be empty before mint)
+user.spiffe-bootstrap length before mint: 0 bytes

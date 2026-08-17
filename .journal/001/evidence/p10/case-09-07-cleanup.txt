@@ -1,0 +1,72 @@
+### Case 9 — step 5: cleanup and proof it is gone
+2026-08-17T17:06:57Z
+
+--- bootstrap key state on GEN2 after its successful redemption (the broker clears it on commit)
+user.spiffe-bootstrap length on GEN2 after redeem: 0 bytes
+$ incus config unset ovh-incusos:spike-p10-c9-recycle user.spiffe-bootstrap --project spike-spiffe  (belt and braces)
+Error: Can't unset key 'user.spiffe-bootstrap', it's not currently set
+(exit 1)
+
+--- remove the GEN1 payload file from the broker container
+ls: cannot access '/tmp/p10c9-payload.json': No such file or directory
+1
+
+--- delete both throwaway registration entries
+$ spire-server entry delete -entryID 88de86e3-747f-4b67-b26a-0b3b62bf57ef
+Deleted entry with ID: 88de86e3-747f-4b67-b26a-0b3b62bf57ef
+
+
+Deleted 1 entries successfully$ spire-server entry delete -entryID 346e448d-0013-4a2d-b6d6-aee4134f2329
+Deleted entry with ID: 346e448d-0013-4a2d-b6d6-aee4134f2329
+
+
+Deleted 1 entries successfully
+--- delete the throwaway instance
+$ incus delete ovh-incusos:spike-p10-c9-recycle --force --project spike-spiffe
+(exit 0)
+after final delete: LOOKUP FAILED: Error: Failed to fetch instance "spike-p10-c9-recycle" in project "spike-spiffe": Instance not found
+$ incus query 'ovh-incusos:/1.0/instances?recursion=1&all-projects=true&filter=config.volatile.uuid eq 8b7a4ddc-c218-4c48-a79b-fe1f377e8734' | jq length
+0
+
+--- residual-file sweep inside the broker container
+$ ls -l /tmp | grep p10c9   (before)
+-rw------- 1 root root 265 Aug 17 17:04 p10c9-mint-resp.json
+--- the one survivor is the FIRST mint response, which by contract carries no secret. Field names:
+{"nonce_id":<value>,"expires_at":<value>,"instance_uuid":<value>,"instance_name":<value>,"generation":<value>,"project":<value>}
+$ rm -f /tmp/p10c9-*
+(no p10c9 files remain)
+
+--- final SPIRE state: exactly the two pre-existing entries and the two pre-existing attested nodes
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 17:45:58 +0000 UTC
+Serial number     : 183182789406587755274609017619334826135
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 18:03:47 +0000 UTC
+Serial number     : 136539776118668358900007883244891863334
+Can re-attest     : true
+Agent version     : 1.15.2
+

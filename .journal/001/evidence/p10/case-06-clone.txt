@@ -1,0 +1,377 @@
+### Case 6 — Clone (incus copy of A): pre-state
+2026-08-17T18:19:30Z
+
+$ incus list ovh-incusos: --project spike-spiffe --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+
+$ incus snapshot list ovh-incusos:spike-guest-a --project spike-spiffe
++------+----------+------------+----------+
+| NAME | TAKEN AT | EXPIRES AT | STATEFUL |
++------+----------+------------+----------+
+
+$ incus query ovh-incusos:/1.0/instances/spike-guest-a?project=spike-spiffe  (identity fields)
+name=spike-guest-a project=spike-spiffe type=virtual-machine status=Running uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=c32efc7b-f3d8-4637-9818-f8906c35543a base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+
+$ incus config get ovh-incusos:spike-guest-a user.spiffe-bootstrap --project spike-spiffe  (length only)
+user.spiffe-bootstrap length: 1 bytes
+
+### Case 6 — step 1: snapshot running A without state, then copy the snapshot to a throwaway clone
+2026-08-17T18:19:42Z
+
+$ incus snapshot create ovh-incusos:spike-guest-a p10-c6-src --project spike-spiffe   (stateless by default)
+(exit 0)
+
+$ incus snapshot list ovh-incusos:spike-guest-a --project spike-spiffe
++------------+----------------------+------------+----------+
+|    NAME    |       TAKEN AT       | EXPIRES AT | STATEFUL |
++------------+----------------------+------------+----------+
+| p10-c6-src | 2026/08/17 11:19 PDT |            | NO       |
++------------+----------------------+------------+----------+
+
+$ incus copy ovh-incusos:spike-guest-a/p10-c6-src ovh-incusos:spike-p10-c6-clone --project spike-spiffe
+(exit 0)
+
+$ incus list ovh-incusos: --project spike-spiffe --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p10-c6-clone,STOPPED,VIRTUAL-MACHINE
+
+### Case 6 — step 2a: source vs clone identity fields, clone still stopped
+2026-08-17T18:19:52Z
+$ incus query ovh-incusos:/1.0/instances/spike-guest-a?project=spike-spiffe
+  name=spike-guest-a project=spike-spiffe type=virtual-machine status=Running location=none
+  uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+  base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  created_at=2026-08-17T03:18:09.069463101Z
+$ incus query ovh-incusos:/1.0/instances/spike-p10-c6-clone?project=spike-spiffe
+  name=spike-p10-c6-clone project=spike-spiffe type=virtual-machine status=Stopped location=none
+  uuid=719d84e1-673e-40dc-a4f7-24d322ee9971
+  generation=719d84e1-673e-40dc-a4f7-24d322ee9971
+  base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  created_at=2026-08-17T18:19:43.610173436Z
+
+$ incus config get ovh-incusos:spike-p10-c6-clone user.spiffe-bootstrap --project spike-spiffe
+clone user.spiffe-bootstrap length: 1 bytes
+
+### Case 6 — step 2b: start the clone and ask its OWN /dev/incus/sock who it is
+2026-08-17T18:20:04Z
+$ incus start ovh-incusos:spike-p10-c6-clone --project spike-spiffe
+(exit 0)
+waiting for the guest agent to come up...
+exec available after 30s-ish
+
+$ incus query ovh-incusos:/1.0/instances/spike-p10-c6-clone?project=spike-spiffe  (after first boot)
+  status=Running uuid=719d84e1-673e-40dc-a4f7-24d322ee9971 generation=719d84e1-673e-40dc-a4f7-24d322ee9971
+
+--- clone asks its own /dev/incus/sock for its instance record ---
+$ incus exec spike-p10-c6-clone -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0
+Error: cannot use null as iterable (array or object)
+
+$ ... GET /1.0/config/user.spiffe-bootstrap  (clone has no bootstrap key)
+HTTP 404
+body: not found
+
+--- guest-visible DMI product_uuid on the clone vs A (VM DMI is rendered from volatile.uuid) ---
+spike-guest-a /sys/class/dmi/id/product_uuid = a955ca30-a0dc-4087-a369-37d53d389c5a
+spike-p10-c6-clone /sys/class/dmi/id/product_uuid = 719d84e1-673e-40dc-a4f7-24d322ee9971
+
+--- retry: raw /dev/incus/sock GET /1.0 on the clone and on A (self-identity, side by side) ---
+$ incus exec spike-guest-a -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0
+  Error: cannot use null as iterable (array or object)
+  $ ... GET /1.0/config/user.spiffe-bootstrap
+  HTTP 404
+  body-bytes: 10
+$ incus exec spike-p10-c6-clone -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0
+  Error: cannot use null as iterable (array or object)
+  $ ... GET /1.0/config/user.spiffe-bootstrap
+  HTTP 404
+  body-bytes: 10
+
+--- retry 2: the guest API /1.0 body carries no name/uuid, so self-identity is read from /1.0/meta-data ---
+== spike-guest-a
+$ incus exec spike-guest-a -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0
+  {"api_version":"1.0","instance_type":"virtual-machine","location":"ns1001912.ip-147-135-105.us","state":"Started"}
+$ incus exec spike-guest-a -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0/meta-data
+  #cloud-config
+  instance-id: 20758eb3-2c4d-41bb-8a7b-21c372ad4ee5
+  local-hostname: spike-guest-a
+$ incus exec spike-guest-a -- cat /sys/class/dmi/id/product_uuid
+  a955ca30-a0dc-4087-a369-37d53d389c5a
+== spike-p10-c6-clone
+$ incus exec spike-p10-c6-clone -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0
+  {"api_version":"1.0","instance_type":"virtual-machine","location":"ns1001912.ip-147-135-105.us","state":"Started"}
+$ incus exec spike-p10-c6-clone -- curl -sS --unix-socket /dev/incus/sock http://custom.socket/1.0/meta-data
+  #cloud-config
+  instance-id: b323dc2e-63dc-406a-afc0-da12fc928708
+  local-hostname: spike-p10-c6-clone
+$ incus exec spike-p10-c6-clone -- cat /sys/class/dmi/id/product_uuid
+  719d84e1-673e-40dc-a4f7-24d322ee9971
+
+Guest API reports the CLONE, not A: meta-data instance-id and DMI product_uuid both equal the clone UUID 719d84e1-673e-40dc-a4f7-24d322ee9971.
+
+CORRECTION to the line immediately above (written before the values were re-read; kept visible rather than
+silently edited): meta-data instance-id is volatile.cloud-init.instance-id, NOT volatile.uuid. The clone
+reports instance-id=b323dc2e-63dc-406a-afc0-da12fc928708 while A reports 20758eb3-2c4d-41bb-8a7b-21c372ad4ee5;
+they differ, which is P6 §2 behaviour (cloud-init id changes on copy), but neither equals a volatile.uuid.
+The two socket-side facts that DO prove clone-not-A self-identity are:
+  local-hostname          A=spike-guest-a          clone=spike-p10-c6-clone
+  DMI product_uuid        A=a955ca30-a0dc-4087-a369-37d53d389c5a   clone=719d84e1-673e-40dc-a4f7-24d322ee9971
+DMI product_uuid is rendered by Incus from volatile.uuid at boot, so it equals the clone anchor exactly.
+Per P6 §2 it is a claim, not corroboration; the authoritative anchor remains the Incus record read host-side.
+
+### Case 6 — step 3: what SPIRE material did the copied disk actually carry?
+2026-08-17T18:21:34Z
+The snapshot was stateless, so only on-disk bytes were copied. P9 EXCHANGE_RETENTION=shred plus
+AGENT_KEY_MANAGER=memory means A holds the exchange credential only on a tmpfs that is destroyed at
+shutdown, and never persists a node-SVID private key. The clone is checked against that expectation.
+
+$ incus exec spike-p10-c6-clone -- ls -la /var/lib/spire-agent
+  total 16
+  drwx------  2 root root 4096 Aug 17 17:55 .
+  drwxr-xr-x 19 root root 4096 Aug 17 17:03 ..
+  -rw-------  1 root root 3358 Aug 17 17:55 agent-data.json
+  -rw-r--r--  1 root root 1539 Aug 17 17:55 bundle.pem
+
+$ incus exec spike-p10-c6-clone -- ls -la /run/spike-exchange  (tmpfs mount from A; must not exist)
+  ls: cannot access '/run/spike-exchange': No such file or directory
+
+$ incus exec spike-p10-c6-clone -- find / -xdev \( -name "svid.key" -o -name "svid.pem" -o -name "agent_svid.der" -o -name "redeem-response*" \) -printf "%p %s %M\n"
+  (no output above = zero matches)
+
+$ incus exec spike-p10-c6-clone -- grep -rlI "PRIVATE KEY" / --exclude-dir=/proc --exclude-dir=/sys --exclude-dir=/dev  (count only)
+  files containing a PRIVATE KEY block: 5
+
+$ incus exec spike-p10-c6-clone -- pgrep -a spire-agent   (no agent process after boot)
+  <no spire-agent process>
+
+$ incus exec spike-p10-c6-clone -- ls /root/p9  (the bootstrap harness itself WAS copied)
+  agent.conf.template
+  broker-ca.pem
+  guest-agent-bootstrap.sh
+  guest-workload-check.sh
+
+--- enumerate the 5 PRIVATE KEY files on the clone, so "5" is attributed rather than alarming ---
+$ incus exec spike-p10-c6-clone -- grep -rlI "PRIVATE KEY" / --exclude-dir=/proc --exclude-dir=/sys --exclude-dir=/dev
+  2488673  /usr/share/mime/packages/freedesktop.org.xml
+  33768  /root/p9/guest-workload-check.sh
+  63117  /root/p9/guest-agent-bootstrap.sh
+  288  /run/incus_agent/agent.key
+  34848271  /var/lib/apt/lists/deb.debian.org_debian_dists_trixie_main_i18n_Translation-en
+
+--- what is inside the copied /var/lib/spire-agent/agent-data.json (KEY NAMES ONLY, no values) ---
+$ incus exec spike-p10-c6-clone -- jq -r "paths(scalars)|join(\".\")" /var/lib/spire-agent/agent-data.json
+  bootstrap_start_time
+  bootstrap_use
+  bundle.0
+  bundle.1
+  connection_attempts
+  reattestable
+  svid.0
+$ ... top-level type/shape
+  top-level keys: bootstrap_start_time,bootstrap_use,bundle,connection_attempts,reattestable,svid
+
+--- does the copied bundle.pem match A? (public material; digest only) ---
+  spike-guest-a sha256(/var/lib/spire-agent/bundle.pem) = 5a7793f3dee418d2fb5d895645141682010fef49a53c5127bfc50f900281bd35
+  spike-p10-c6-clone sha256(/var/lib/spire-agent/bundle.pem) = 5a7793f3dee418d2fb5d895645141682010fef49a53c5127bfc50f900281bd35
+
+--- can the COPIED agent state start? Render the same config the harness renders and run it. ---
+$ incus exec spike-p10-c6-clone -- sh -c "<render agent.conf.template; spire-agent validate; spire-agent run>"
+validate:
+    SPIRE agent configuration file is valid.
+run (foreground, 20s cap):
+    time="2026-08-17T18:22:29Z" level=info msg="Creating spire agent UDS directory" dir=/tmp/spire-agent-c6/public
+    time="2026-08-17T18:22:29Z" level=warning msg="Current umask 0022 is too permissive; setting umask 0027"
+    time="2026-08-17T18:22:29Z" level=info msg="Starting agent" data_dir=/var/lib/spire-agent version=1.15.2
+    time="2026-08-17T18:22:29Z" level=error msg="Failed to configure plugin" error="rpc error: code = InvalidArgument desc = unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+    time="2026-08-17T18:22:29Z" level=debug msg="Unloading plugin" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+    time="2026-08-17T18:22:29Z" level=debug msg="Plugin deinitialized" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+    time="2026-08-17T18:22:29Z" level=info msg="Plugin unloaded" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+    time="2026-08-17T18:22:29Z" level=error msg="Agent crashed" error="failed to configure plugin \"x509pop\": rpc error: code = InvalidArgument desc = unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory"
+sh: 21: Bad substitution
+
+NOTE: the trailing "sh: 21: Bad substitution" is dash rejecting my ${PIPESTATUS} echo inside the
+exec wrapper, after spire-agent had already exited. It is an artefact of this transcript command,
+not of the agent. The operative line is the crash above it.
+
+### Case 6 — step 4: mint bootstrap material FOR THE CLONE and redeem it FROM the clone
+2026-08-17T18:22:50Z
+The clone UUID 719d84e1-673e-40dc-a4f7-24d322ee9971 has no registration entry. The only exchange
+entry in the server selects incus:uuid:a955ca30-... (guest A). No identity is claimed anywhere in
+this request: guest-agent-bootstrap.sh sends the nonce and nothing else.
+
+$ incus exec spike-broker -- env ... /root/p8/operator-mint.sh 719d84e1-673e-40dc-a4f7-24d322ee9971 spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=719d84e1-673e-40dc-a4f7-24d322ee9971 project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=57029e26861b50c1ad8f94d275e31f92
+  expires_at=2026-08-17T18:32:50.991671953Z
+  instance_name=spike-p10-c6-clone
+  generation_uuid=719d84e1-673e-40dc-a4f7-24d322ee9971
+  instance_uuid=719d84e1-673e-40dc-a4f7-24d322ee9971
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=57029e26861b50c1ad8f94d275e31f92 expires_at=2026-08-17T18:32:50.991671953Z instance_name=spike-p10-c6-clone generation_uuid=719d84e1-673e-40dc-a4f7-24d322ee9971 instance_uuid=719d84e1-673e-40dc-a4f7-24d322ee9971 project=spike-spiffe
+MINT_EXIT=0
+
+$ incus config get spike-p10-c6-clone user.spiffe-bootstrap --project spike-spiffe  (field names + length only)
+  payload field names: broker_fingerprint, broker_url, nonce, nonce_id
+  payload nonce_id (public): 57029e26861b50c1ad8f94d275e31f92
+  payload length (bytes): 267
+
+--- redeem FROM the clone, canonical harness, no jq overrides, no claimed identity field ---
+$ incus exec spike-p10-c6-clone -- env SPIRE_SERVER_ADDRESS=10.55.156.67 SPIRE_SERVER_PORT=8081 TRUST_DOMAIN=spike.incus.internal BROKER_CACERT=/root/p9/broker-ca.pem /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=57029e26861b50c1ad8f94d275e31f92
+payload: sha256=7c261f9c9cbf10b42b3ad4f22afdffe05cec883726645f44bd1954cc58a24c8e
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=57029e26861b50c1ad8f94d275e31f92
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 503
+verdict: ERROR 503 — a broker dependency is unavailable: the nonce store, the Incus API,
+         or the host agent's Broker API endpoint that mints the exchange SVID. Retryable.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=503 nonce_id=57029e26861b50c1ad8f94d275e31f92 broker_reason=nonce_consumed_without_svid
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+BOOTSTRAP_EXIT=13
+
+--- broker-side view of that redeem: which UUID did it authoritatively resolve, and why no SVID? ---
+$ incus exec spike-broker -- sh -c "grep 57029e26861b50c1ad8f94d275e31f92 <broker log>"
+
+(if empty above, the broker logs to stdout; pulling the container log instead)
+  README
+  alternatives.log
+  apt
+  bootstrap.log
+  btmp
+  dpkg.log
+  journal
+  lastlog
+  private
+  wtmp
+
+(the broker logs to its journal, not to a file — corrected command)
+$ incus exec spike-broker -- journalctl -u incus-spiffe-broker --since 18:22:00 | grep 57029e26861b50c1ad8f94d275e31f92
+Aug 17 18:22:51 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:22:51.006895741Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"57029e26861b50c1ad8f94d275e31f92","instance_uuid":"719d84e1-673e-40dc-a4f7-24d322ee9971","instance_name":"spike-p10-c6-clone","generation":"719d84e1-673e-40dc-a4f7-24d322ee9971","project":"spike-spiffe","expires_at":"2026-08-17T18:32:50.991671953Z"}
+Aug 17 18:22:59 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:22:59.403336725Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"57029e26861b50c1ad8f94d275e31f92","instance_uuid":"719d84e1-673e-40dc-a4f7-24d322ee9971","instance_name":"spike-p10-c6-clone","project":"spike-spiffe"}
+Aug 17 18:22:59 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:22:59.413602667Z","level":"ERROR","msg":"nonce consumed but no exchange SVID was issued","operation":"redeem","outcome":"burned","nonce_id":"57029e26861b50c1ad8f94d275e31f92","instance_uuid":"719d84e1-673e-40dc-a4f7-24d322ee9971","project":"spike-spiffe","failure_class":"broker_no_svid","peer_address":"10.55.156.165:46940","http_status":503,"code":"nonce_consumed_without_svid","reason":"broker delivered no X.509-SVID: response carried an empty SVID list"}
+
+--- was ANY exchange identity issued during the clone redeem window? ---
+$ incus exec spike-broker -- journalctl -u incus-spiffe-broker --since 18:22:40 --until 18:24:00 | grep -c exchange_spiffe_id
+exchange_spiffe_id occurrences in the clone window = 0
+$ ... | grep -c a955ca30-a0dc-4087-a369-37d53d389c5a   (any mention of As UUID in that window)
+guest-A UUID occurrences in the clone window = 0
+
+### Case 6 — step 5: no A selector and no A node identity reached the clone; A stayed attested
+2026-08-17T18:23:53Z
+
+$ incus exec spire-server -- spire-server agent list
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:10:18 +0000 UTC
+Serial number     : 242286826386577536710300857543115429998
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 18:55:31 +0000 UTC
+Serial number     : 142664646892380702363741184904059716611
+Can re-attest     : true
+Agent version     : 1.15.2
+
+$ ... | grep -c 719d84e1-673e-40dc-a4f7-24d322ee9971   (a node for the clone UUID?)
+nodes whose SPIFFE ID contains the clone UUID = Error: Command not found
+
+$ incus exec spire-server -- spire-server entry show   (still exactly the broker + A exchange entries)
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+--- host agent (incus-attestor) selectors derived for the clone submission ---
+$ incus exec spire-agent -- journalctl ... | grep -i 719d84e1  (host-side derivation, clone window)
+Error: Command not found
+
+$ incus config get spike-p10-c6-clone user.spiffe-bootstrap --project spike-spiffe  (cleared by the broker on consume)
+clone user.spiffe-bootstrap after burn: 1 bytes
+
+$ incus exec spike-p10-c6-clone -- pgrep -a spire-agent   (no node identity running in the clone)
+<no spire-agent process>
+
+(the two "Error: Command not found" lines above are the spire-server and spire-agent OCI containers
+ having no /bin/sh and no journalctl; the same two checks are re-run below with the filtering done
+ operator-side and with the agent log read through `incus info --show-log`.)
+
+$ incus exec spire-server -- spire-server agent list | grep -c 719d84e1-673e-40dc-a4f7-24d322ee9971
+nodes whose SPIFFE ID contains the clone UUID = 0
+
+--- host agent log, clone window: which selectors did incus-attestor derive? ---
+$ incus info ovh-incusos:spire-agent --show-log | grep 719d84e1 | tail
+$ incus info ovh-incusos:spire-agent --show-log | grep -c "a955ca30" (in clone window lines)
+clone-window agent lines that also mention A UUID = 0
+
+NOTE on the empty host-agent grep: the spire-agent OCI container has no shell and no journal, and
+`incus info --show-log` returns the LXC supervisor log, not the agent process stdout. There is no
+persisted host-agent log on this deployment, so the host-side derivation is evidenced by the broker
+journal (which records the UUID the broker itself resolved and submitted) and by server state, not by
+an agent transcript. The 0 counts above are therefore reported as "no A UUID anywhere in the broker
+journal for this window", which is the claim actually supported.
+
+### Case 6 — cleanup: delete the clone and the source snapshot
+2026-08-17T18:24:47Z
+$ incus delete ovh-incusos:spike-p10-c6-clone --project spike-spiffe --force
+(exit 0)
+$ incus snapshot delete ovh-incusos:spike-guest-a p10-c6-src --project spike-spiffe
+(exit 0)
+
+$ incus list ovh-incusos: --project spike-spiffe --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+$ incus snapshot list ovh-incusos:spike-guest-a --project spike-spiffe
++------+----------+------------+----------+
+| NAME | TAKEN AT | EXPIRES AT | STATEFUL |
++------+----------+------------+----------+
+
+--- A unchanged and still attested after the whole case ---
+$ incus query ovh-incusos:/1.0/instances/spike-guest-a?project=spike-spiffe
+  uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=c32efc7b-f3d8-4637-9818-f8906c35543a status=Running
+$ incus exec spire-server -- spire-server agent list
+Found 2 attested agents:
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Serial number     : 242286826386577536710300857543115429998
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Serial number     : 142664646892380702363741184904059716611
+
+$ incus exec spike-guest-a -- pgrep -a spire-agent   (As guest agent still running on its node SVID)
+3525 spire-agent run -config /run/spike-p9/agent.conf

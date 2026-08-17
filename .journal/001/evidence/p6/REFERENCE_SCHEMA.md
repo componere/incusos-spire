@@ -159,3 +159,40 @@ Every schema field and selector, back to the command that produced its value.
 | Cluster behavior of `location` and `server` | This host is `server_clustered: false`; every instance reports `location: "none"` | deferred until a real cluster exists |
 | Whether the reference and the broker binary merge (decision D1) | Unchanged by P6; still an empirical P7/P8 decision | P7/P8 |
 | `volatile.vsock_id` as a host↔guest channel binding | Observed to exist on VMs (`1189874259`); never evaluated | P8/P9 if needed |
+
+## 7. P10 lifecycle corrections — 2026-08-17
+
+These append-only corrections preserve the P6 record above and incorporate the later P10
+experiments. They do not change the reference fields or selector set.
+
+| Earlier P6 statement | P10 correction | Source fragment |
+|---|---|---|
+| §2 described `incus:project` as constant for the instance's life on this deployment; §6 left project-move behavior open | **Answered.** A supported stopped project move preserved `volatile.uuid` and `volatile.uuid.generation`, changed the top-level project and `incus:project`, and reset `created_at`. `incus:project` remains server-owned, but it is not life-constant | [`case-08-02-proxy-a-project-move.txt`](../p10/case-08-02-proxy-a-project-move.txt) |
+| §2 described `created_at` as a possible duplicate-UUID tiebreaker | **Corrected.** Export/import replayed `created_at`, `volatile.uuid`, and `volatile.uuid.generation` byte-identically. The project move also reset `created_at`, so it is neither a duplicate tiebreaker nor a relocation-stable value | [`case-08-03-proxy-b-export-import.txt`](../p10/case-08-03-proxy-b-export-import.txt), [`case-08-02-proxy-a-project-move.txt`](../p10/case-08-02-proxy-a-project-move.txt) |
+| §3 required a multi-match hard failure based on direct config-write duplication | **Extended.** After the imported instance's duplicate NIC MAC was cleared, two instances ran concurrently with the same UUID and generation. A supported backup/restore path can therefore create the ambiguity; single-match-or-fail is load-bearing, not only a defense against config tampering | [`case-08-03-proxy-b-export-import.txt`](../p10/case-08-03-proxy-b-export-import.txt) |
+| §3 rejected `incus:name` as an anchor based on P6 create/delete observations | **Confirmed through the live broker path.** Recreating the same name generated a new UUID and generation, left the new bootstrap key clear, made the old UUID selector non-matching, and caused the still-unexpired old nonce path to fail with `409` and internal reason `attestor: instance not found` | [`case-09-03-delete-recreate.txt`](../p10/case-09-03-delete-recreate.txt), [`case-09-04-stale-nonce-replay.txt`](../p10/case-09-04-stale-nonce-replay.txt), [`case-09-06-gen2-derivation.txt`](../p10/case-09-06-gen2-derivation.txt) |
+
+### Architecture finding `P10-ARCH-001` — current adoption is NO-GO
+
+The stopped export/import correction makes current architecture adoption **NO-GO independently
+of the deferred cluster-member migration result**. The supported operation replayed
+`volatile.uuid`, `volatile.uuid.generation`, and `created_at`; after NIC MAC deduplication, the
+source and imported instances ran concurrently with identical identity anchors. Reconsider
+adoption only after either import re-keys or prevents duplicate anchors, or an authoritative global
+lookup is verified to return exactly one match and lifecycle reconciliation is verified and
+explicitly accepted.
+
+The §3 multi-match hard failure prevents silent instance selection for the duplicate observed on
+this single node, but it turns this ordinary lifecycle operation into identity-issuance
+unavailability while the duplicate exists. Lookup behavior across multiple cluster members remains
+untested.
+
+### Cluster migration remains deferred
+
+The host was still non-clustered
+([`case-08-01-not-clustered.txt`](../p10/case-08-01-not-clustered.txt)), so real
+member-to-member migration remains untested. That deferral does not soften `P10-ARCH-001`. A future
+adoption decision must also establish that cluster migration preserves `volatile.uuid`, define the
+required `volatile.uuid.generation` behavior, and verify authoritative global single-match lookup
+across members. The single-node project move and export/import proxies cannot establish those
+cluster-specific properties.

@@ -307,3 +307,58 @@ Post-cleanup verification:
 | **P5 / orchestrator** | Two reads the least-privilege credential must be able to perform: (a) recursive instance list in one project with a config filter, (b) optionally `GET /1.0` for `environment.server_name` if the `server` field is populated from the API rather than from static plugin config. Two writes both identities must be **denied**: `volatile.uuid` and `volatile.uuid.generation` (P6 proved they are writable and un-deduplicated). The orchestrator still needs to re-run this phase's reads as `spike-attestor-ro`; P6 used the admin remote by contract, so "an attestor-scoped credential can perform these reads" is **not** proven by P6. |
 | **P8 / P9** (guest bootstrap) | A VM guest can read its own `volatile.uuid` from `/sys/class/dmi/id/product_uuid` with no Incus access, which is a convenient way for a guest to name itself in a Broker reference. It is **not** evidence: the value is rendered from config at boot and followed a tampered config value in P6's test, and two VMs were made to report the same one. A guest cannot see `volatile.uuid.generation` at all, so generation-based nonce invalidation must be enforced host-side. `volatile.vsock_id` exists for VMs and may be a host↔guest channel binding worth its own experiment. |
 | **P10** (adversarial matrix) | Row 6 (clone): confirmed — a clone always gets a fresh `volatile.uuid` **and** a fresh generation, so it cannot present the source's UUID from either Incus state or guest DMI; but a principal with config write can forge the source's UUID onto the clone, which is the case P10 should actually run. Row 7 (snapshot restore): confirmed — restore preserves uuid and always yields a new generation, so generation-bound state is invalidated by construction; VM restore additionally reboots the guest. Row 9 (delete + recreate same name): confirmed — fresh UUID, no reuse. Row 8 (migration): **not attempted by P6.** A project-move / export-import proxy is untested here; the plan assigns those proxies to P10 and P6 did not create a second project to avoid colliding with P5. |
+
+## P10 lifecycle update — 2026-08-17
+
+This section appends later live observations without altering the original P6 record. The source
+reports are P10 [`case-08-migration.md`](../p10/case-08-migration.md) and
+[`case-09-delete-recreate.md`](../p10/case-09-delete-recreate.md). The relevant source fragments
+are:
+
+- host topology: [`case-08-01-not-clustered.txt`](../p10/case-08-01-not-clustered.txt);
+- stopped cross-project move:
+  [`case-08-02-proxy-a-project-move.txt`](../p10/case-08-02-proxy-a-project-move.txt);
+- stopped export/import:
+  [`case-08-03-proxy-b-export-import.txt`](../p10/case-08-03-proxy-b-export-import.txt);
+- delete and recreate:
+  [`case-09-03-delete-recreate.txt`](../p10/case-09-03-delete-recreate.txt);
+- old nonce denial:
+  [`case-09-04-stale-nonce-replay.txt`](../p10/case-09-04-stale-nonce-replay.txt); and
+- new-instance derivation:
+  [`case-09-06-gen2-derivation.txt`](../p10/case-09-06-gen2-derivation.txt).
+
+### Observed lifecycle behavior
+
+| P10 operation | Observed result | P6 consequence |
+|---|---|---|
+| Stopped project move | Preserved `volatile.uuid` and `volatile.uuid.generation`; changed the top-level project and therefore `incus:project`; reset `created_at` to the move time | Corrects the original description of `incus:project` as life-constant on this deployment. It is server-owned but mutable through a supported stopped move. `created_at` is not stable across relocation |
+| Stopped export/import | Replayed `volatile.uuid`, `volatile.uuid.generation`, and `created_at` byte-identically. After the imported instance's duplicate NIC MAC was cleared, both instances ran concurrently with the same UUID and generation | Extends P6's non-uniqueness finding from direct config writes to a supported backup/restore path. The single-match-or-hard-fail rule is load-bearing. `created_at` cannot break a duplicate-UUID tie |
+| Delete and recreate with the same name | Generated a new `volatile.uuid` and a new `volatile.uuid.generation`; the new instance's `user.spiffe-bootstrap` was clear; the old UUID selector matched zero instances; redeeming the still-unexpired old nonce returned `409` with internal reason `attestor: instance not found` | Confirms against the live broker path that a name is not an identity anchor. Neither the old selector nor the UUID-bound nonce transfers to the new instance |
+
+These observations supersede two tentative statements in the original P6 record without erasing
+them: the `created_at` row under “Candidate fallback anchors” is no longer a viable duplicate-UUID
+tiebreaker, and the P10 handoff's project-move/export-import proxy is no longer untested. The P6
+T7/V6 delete-and-recreate result is also confirmed end to end by the P10 selector and nonce checks.
+
+### Architecture finding `P10-ARCH-001` — current adoption is NO-GO
+
+The stopped export/import observation makes current architecture adoption **NO-GO independently
+of the deferred cluster-member migration result**. A supported operation replayed
+`volatile.uuid`, `volatile.uuid.generation`, and `created_at`; after NIC MAC deduplication, the
+source and imported instances ran concurrently with identical identity anchors. Reconsider
+adoption only after either import re-keys or prevents duplicate anchors, or an authoritative global
+lookup is verified to return exactly one match and lifecycle reconciliation is verified and
+explicitly accepted.
+
+The multi-match hard failure prevents silent instance selection for the duplicate observed on this
+single node, but it turns this ordinary lifecycle operation into identity-issuance unavailability
+while the duplicate exists. Lookup behavior across multiple cluster members remains untested.
+
+### Cluster migration remains deferred
+
+The host remained non-clustered, so P10 did not test a real member-to-member migration. That
+deferral does not soften `P10-ARCH-001`. A future adoption decision must also establish that
+cluster migration preserves `volatile.uuid`, define the required
+`volatile.uuid.generation` behavior, and verify authoritative global single-match lookup across
+members. The single-node project move and export/import observations do not answer those
+cluster-specific questions.

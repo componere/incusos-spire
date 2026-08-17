@@ -1,0 +1,18 @@
+### Case 9 — step 4: replay the OLD (GEN1) nonce against the recreated same-named instance
+2026-08-17T17:05:27Z
+The nonce was minted at 17:04:12Z with expires_at 2026-08-17T17:14:12Z, so it is still WITHIN its TTL:
+any refusal below is an identity refusal, not an expiry refusal.
+The request body is the verbatim GEN1 bootstrap payload, read from the mode-0600 file; it is never printed.
+
+$ curl -sS --cacert /state/tls/spike-root-ca.pem -X POST https://10.55.156.44:8443/v1alpha1/redeem --data @/tmp/p10c9-payload.json
+HTTP 409
+response body verbatim:
+{"error":"conflict"}
+
+response body byte length: 21
+
+--- broker log lines for this redemption attempt
+{"time":"2026-08-17T17:04:13.001885997Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"40b7edc017f09396c8acff9426c44b58","instance_uuid":"3bfe33a9-3b7f-42d8-9d8a-70d3cd754183","instance_name":"spike-p10-c9-recycle","generation":"3bfe33a9-3b7f-42d8-9d8a-70d3cd754183","project":"spike-spiffe","expires_at":"2026-08-17T17:14:12.993972062Z"}
+{"time":"2026-08-17T17:04:17.617743892Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:42400","http_status":409,"code":"conflict","reason":"nonce: consume nonce 6f6a834cc2d0fc807fd9bf14f91a24ad: nonce: nonce already used: id 6f6a834cc2d0fc807fd9bf14f91a24ad"}
+{"time":"2026-08-17T17:04:47.405727818Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:45266","http_status":409,"code":"conflict","reason":"nonce: consume nonce 6f6a834cc2d0fc807fd9bf14f91a24ad: nonce: nonce already used: id 6f6a834cc2d0fc807fd9bf14f91a24ad"}
+{"time":"2026-08-17T17:05:28.091409399Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"40b7edc017f09396c8acff9426c44b58","instance_uuid":"3bfe33a9-3b7f-42d8-9d8a-70d3cd754183","peer_address":"10.55.156.44:40212","http_status":409,"code":"conflict","reason":"attestor: instance not found"}

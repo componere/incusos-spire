@@ -1,0 +1,33 @@
+### case-04-01 — reset guest A so the full chain is proven from nothing
+### 2026-08-17T17:02:36Z
+
+--- 0. pre-existing guest agent process in A ---
+    PID COMMAND
+   2650 spire-agent
+2650 spire-agent run -config /run/spike-p9/agent.conf
+
+--- 1. stop the guest agent left attested by P9 ---
+pkill: signalled
+no spire-agent process remains
+
+--- 2. remove the agent persistent data_dir and run dir (public material only) ---
+ls: cannot access '/var/lib/spire-agent': No such file or directory
+ls: cannot access '/run/spike-p9': No such file or directory
+removed
+
+--- 3. EVICT the guest node from the server (evict, not ban) ---
+Agent evicted successfully
+
+--- 4. server now knows ONE node ---
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 17:45:58 +0000 UTC
+Serial number     : 183182789406587755274609017619334826135
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+--- 5. user.spiffe-bootstrap clear on A before we start ---
+<unset>

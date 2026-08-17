@@ -1,0 +1,48 @@
+### Case 8 — step 1: is this host clustered?
+2026-08-17T17:00:23Z
+
+$ incus cluster list ovh-incusos:
+Error: Server isn't part of a cluster
+(exit 1)
+
+$ incus query ovh-incusos:/1.0/cluster
+{
+	"enabled": false,
+	"member_config": [
+		{
+			"description": "\"parent\" property for network \"uplink\"",
+			"entity": "network",
+			"key": "parent",
+			"name": "uplink",
+			"value": ""
+		},
+		{
+			"description": "\"source\" property for storage pool \"local\"",
+			"entity": "storage-pool",
+			"key": "source",
+			"name": "local",
+			"value": ""
+		},
+		{
+			"description": "\"zfs.pool_name\" property for storage pool \"local\"",
+			"entity": "storage-pool",
+			"key": "zfs.pool_name",
+			"name": "local",
+			"value": ""
+		}
+	],
+	"server_name": ""
+}
+
+
+$ incus query ovh-incusos:/1.0 | jq '{server_clustered:.environment.server_clustered, server_name:.environment.server_name, server_version:.environment.server_version, os_name:.environment.os_name}'
+{
+  "server_clustered": false,
+  "server_name": "ns1001912.ip-147-135-105.us",
+  "server_version": "7.3",
+  "os_name": "IncusOS"
+}
+
+$ incus query ovh-incusos:/1.0/cluster/members
+Error: Server is not clustered
+(exit 1)

@@ -1,0 +1,25 @@
+### Case 8 — cleanup
+2026-08-17T17:03:02Z
+$ incus delete ovh-incusos:p10-mig1 ovh-incusos:p10-mig1-imported --force --project spike-p10-mig-b
+(exit 0)
+$ incus list ovh-incusos: --project spike-p10-mig-b --format csv
+(empty above = no instances)
+$ incus list ovh-incusos: --project spike-p10-mig-a --format csv
+(empty above = no instances)
+$ incus storage volume list ovh-incusos:local --project spike-p10-mig-b --format csv -c ntu
+7fb36bfa227889b8942b10efe53c3476390791668da093a96ccc09a7f3b5b1f5,image,1
+a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622,image,1
+cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e,image,1
+f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16,image,1
+(empty above = no volumes)
+$ incus project delete ovh-incusos:spike-p10-mig-a
+Project ovh-incusos:spike-p10-mig-a deleted
+$ incus project delete ovh-incusos:spike-p10-mig-b
+Project ovh-incusos:spike-p10-mig-b deleted
+$ incus project list ovh-incusos: --format csv -c n
+default (current)
+spike-spiffe
+$ rm -f /tmp/p10-mig1.tar.gz && ls -l /tmp/p10-mig1.tar.gz
+ls: cannot access '/tmp/p10-mig1.tar.gz': No such file or directory
+$ incus query 'ovh-incusos:/1.0/instances?recursion=1&all-projects=true&filter=config.volatile.uuid eq 88013ade-522b-461c-8617-5e8dee9d0c9e' | jq length
+0

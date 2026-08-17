@@ -1,0 +1,113 @@
+### Case 10 — step 1: EXPIRED NONCE (P10 case 10, stale state 1 of 3)
+Unit: P10StaleLifecycle. Host: ovh-incusos (ns1001912.ip-147-135-105.us).
+No host reboot, no host spire-server/spire-agent container restart, no TPM command in this file.
+
+--- 1a. baseline immediately before the case ---
+now=2026-08-17T17:45:13Z
+$ spire-server entry show | head -1
+Found 2 entries
+$ spire-server agent list | grep -c "SPIFFE ID"
+2
+$ incus config get spike-guest-a user.spiffe-bootstrap  (must be empty before the mint)
+[]
+
+--- 1b. mint ONE nonce for spike-guest-a with a DELIBERATELY SHORT allowed TTL (15s) ---
+MINT_TTL_SECONDS=15 is inside the broker bound (nonce_ttl=max_nonce_ttl=10m), so it is accepted
+rather than clamped; the returned expires_at is the authority. The operator bearer token is read
+from a file inside the broker container and never reaches argv.
+now=2026-08-17T17:45:23Z
+$ incus exec spike-broker -- env MINT_TTL_SECONDS=15 ... /root/p8/operator-mint.sh a955ca30-a0dc-4087-a369-37d53d389c5a spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=15
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=8638a73759d2cd30f42bf26a032b6ae5
+  expires_at=2026-08-17T17:45:39.556449042Z (requested ttl_seconds=15; the applied TTL is whatever the broker bound allowed)
+  instance_name=spike-guest-a
+  generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=8638a73759d2cd30f42bf26a032b6ae5 expires_at=2026-08-17T17:45:39.556449042Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+MINT_EXIT=0
+mint_returned_at=2026-08-17T17:45:24Z
+
+--- 1c. WAIT past expiry, then redeem the now-expired nonce from inside guest A ---
+expires_at = 2026-08-17T17:45:39.556449042Z
+redeem_attempted_at=2026-08-17T17:46:19Z  (deliberately after expiry, and still inside the broker reap grace
+of 2m so the nonce record still EXISTS: this measures the EXPIRY check, not a missing record)
+The canonical P9 harness performs the redemption: it reads the payload from the guest's own
+/dev/incus/sock, pins the broker leaf, and pipes the secret over stdin. No jq override is used.
+$ incus exec spike-guest-a -- env ... /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=8638a73759d2cd30f42bf26a032b6ae5
+payload: sha256=6382c8a2912fcdb7730a25d4d9a2b753644a4a89380edfaf6c3b157203ea9cf5
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=8638a73759d2cd30f42bf26a032b6ae5
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 409
+verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+         forbids redemption: already consumed, expired, bound to another instance, or the
+         generation moved. On a reboot this is the expected answer for a stale key: P9
+         needs a FRESH nonce per bootstrap.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=8638a73759d2cd30f42bf26a032b6ae5 broker_reason=conflict
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+HARNESS_EXIT=11
+redeem_returned_at=2026-08-17T17:46:20Z
+
+--- 1d. verbatim HTTP body of the refusal, captured server-side from the broker journal ---
+$ incus exec spike-broker -- journalctl -u incus-spiffe-broker -n 40 --no-pager -o cat | grep 8638a737...
+{"time":"2026-08-17T17:45:24.571319479Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"8638a73759d2cd30f42bf26a032b6ae5","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","expires_at":"2026-08-17T17:45:39.556449042Z"}
+{"time":"2026-08-17T17:46:20.021583493Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"8638a73759d2cd30f42bf26a032b6ae5","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:43610","http_status":409,"code":"conflict","reason":"nonce: consume nonce 8638a73759d2cd30f42bf26a032b6ae5: nonce: nonce expired: id 8638a73759d2cd30f42bf26a032b6ae5"}
+
+--- 1e. was the refusal PRE-CONSUMPTION? evidence ---
+now=2026-08-17T17:46:36Z
+(i) the broker did NOT clear user.spiffe-bootstrap: it only clears the key after a nonce is
+    actually consumed. The key is still present on the instance:
+    payload field names: nonce, nonce_id, broker_url, broker_fingerprint
+    payload nonce_id (public): 8638a73759d2cd30f42bf26a032b6ae5
+    payload length (bytes): 268
+(ii) no exchange SVID was minted for it: no new entry, no new node, and the guest agent that
+     was already running was never touched by this step.
+$ spire-server agent list | grep "SPIFFE ID"
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+(iii) a SECOND redemption of the same expired nonce, still inside the reap grace, is refused
+      with the SAME reason "nonce expired" and NOT with "nonce already used". The first refusal
+      therefore did not mutate the record: the expiry check precedes consumption.
+second_attempt_at=2026-08-17T17:46:50Z
+redeem: HTTP 409
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=8638a73759d2cd30f42bf26a032b6ae5 broker_reason=conflict
+HARNESS_EXIT=11
+{"time":"2026-08-17T17:46:51.217131008Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"8638a73759d2cd30f42bf26a032b6ae5","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:58948","http_status":409,"code":"conflict","reason":"nonce: consume nonce 8638a73759d2cd30f42bf26a032b6ae5: nonce: nonce expired: id 8638a73759d2cd30f42bf26a032b6ae5"}
+
+--- 1f. cleanup: the expired nonce and its bootstrap key ---
+now=2026-08-17T17:48:50Z  (past expiry + reap_grace=2m + reap_interval=1m)
+$ broker journal, reaper lines for this nonce:
+{"time":"2026-08-17T16:22:17.492151105Z","level":"INFO","msg":"expired nonce reaper stopped","operation":"reap"}
+{"time":"2026-08-17T16:22:46.515590279Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","broker_socket":"/hostagent/broker-run/broker.sock","workload_api_socket":"/hostagent/wlapi-relay.sock","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+{"time":"2026-08-17T16:22:46.51579578Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+{"time":"2026-08-17T17:16:46.557669652Z","level":"WARN","msg":"expired nonce record dropped: its instance no longer exists","operation":"reap","nonce_id":"40b7edc017f09396c8acff9426c44b58","instance_uuid":"3bfe33a9-3b7f-42d8-9d8a-70d3cd754183","project":"spike-spiffe","expires_at":"2026-08-17T17:14:12.993972062Z"}
+{"time":"2026-08-17T17:47:46.53797344Z","level":"INFO","msg":"expired nonce withdrawn","operation":"reap","nonce_id":"8638a73759d2cd30f42bf26a032b6ae5","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe","expires_at":"2026-08-17T17:45:39.556449042Z","instance_name":"spike-guest-a"}
+$ incus config get spike-guest-a user.spiffe-bootstrap  -> []
+
+--- 1g. verdict for stale state 1 ---
+PASS. An expired nonce is refused CLEANLY and PRE-CONSUMPTION:
+  HTTP 409, body {"error":"conflict"}, broker reason verbatim:
+    nonce: consume nonce 8638a73759d2cd30f42bf26a032b6ae5: nonce: nonce expired: id 8638a73759d2cd30f42bf26a032b6ae5
+  The refusal happens INSIDE consume, before the used flag is written and before any Broker
+  API call: the key was not cleared, a repeat attempt reported "nonce expired" and not
+  "nonce already used", and no exchange SVID or node was produced. The record was then
+  withdrawn by the ordinary reaper, which also cleared user.spiffe-bootstrap.
+  Harness exit 11 (broker answered 409). No credential material was returned or stored.

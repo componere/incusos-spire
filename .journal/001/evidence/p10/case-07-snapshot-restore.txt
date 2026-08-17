@@ -1,0 +1,391 @@
+### Case 7 — Snapshot A then restore: step 1, pre-snapshot state and a short-lived workload SVID
+2026-08-17T18:26:35Z
+
+$ incus query ovh-incusos:/1.0/instances/spike-guest-a?project=spike-spiffe
+  PRE-SNAPSHOT uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  PRE-SNAPSHOT generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+  status=Running project=spike-spiffe type=virtual-machine
+
+$ incus exec spire-server -- spire-server agent list  (live node state before anything)
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:10:18 +0000 UTC
+Serial number     : 242286826386577536710300857543115429998
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 18:55:31 +0000 UTC
+Serial number     : 142664646892380702363741184904059716611
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+$ incus exec spike-guest-a -- pgrep -a spire-agent
+3525 spire-agent run -config /run/spike-p9/agent.conf
+$ incus exec spike-guest-a -- spire-agent healthcheck -socketPath /tmp/spire-agent/public/api.sock
+Agent is healthy.
+
+--- temporary workload registration entry, TTL 120s, parented on As node ---
+$ spire-server entry create -parentID <A node> -spiffeID .../guest/p10-c7-demo -selector unix:uid:0 -x509SVIDTTL 120
+Entry ID                : 9932dab6-7504-4102-88a1-f4f288bd54ce
+SPIFFE ID               : spiffe://spike.incus.internal/guest/p10-c7-demo
+Parent ID               : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+
+--- fetch the workload SVID from the in-guest Workload API (record ID, serial, expiry only) ---
+$ incus exec spike-guest-a -- spire-agent api fetch x509 -socketPath /tmp/spire-agent/public/api.sock
+  Received 1 svid after 1.631531ms
+  
+  SPIFFE ID:		spiffe://spike.incus.internal/guest/p10-c7-demo
+  SVID Valid After:	2026-08-17 18:26:38 +0000 UTC
+  SVID Valid Until:	2026-08-17 18:28:48 +0000 UTC
+  CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+  CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+  CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+  CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+  
+
+--- the same SVID as a certificate, to pin serial and not_after exactly (no key material) ---
+$ incus exec spike-guest-a -- sh -c "spire-agent api fetch x509 -write /run/p10c7-svid >/dev/null; openssl x509 -in /run/p10c7-svid/svid.0.pem -noout -serial -dates -ext subjectAltName; shred -uz /run/p10c7-svid/*"
+  serial=98770C369297D81D60A082E6D26821FA
+  notBefore=Aug 17 18:26:38 2026 GMT
+  notAfter=Aug 17 18:28:48 2026 GMT
+  X509v3 Subject Alternative Name: 
+      URI:spiffe://spike.incus.internal/guest/p10-c7-demo
+  staged SVID files shredded: ls: cannot access '/run/p10c7-svid': No such file or directory
+
+### Case 7 — step 2: snapshot p10-c7-before, then mint ONE unused bootstrap value (pre-restore generation)
+2026-08-17T18:27:07Z
+$ incus snapshot create ovh-incusos:spike-guest-a p10-c7-before --project spike-spiffe
+(exit 0)
++---------------+----------------------+------------+----------+
+|     NAME      |       TAKEN AT       | EXPIRES AT | STATEFUL |
++---------------+----------------------+------------+----------+
+| p10-c7-before | 2026/08/17 11:27 PDT |            | NO       |
++---------------+----------------------+------------+----------+
+
+The mint happens AFTER the snapshot on purpose: the value is bound to generation
+c32efc7b-f3d8-4637-9818-f8906c35543a, the generation that the restore is about to replace.
+$ incus exec spike-broker -- env ... /root/p8/operator-mint.sh a955ca30-a0dc-4087-a369-37d53d389c5a spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41
+  expires_at=2026-08-17T18:37:09.525378349Z
+  instance_name=spike-guest-a
+  generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41 expires_at=2026-08-17T18:37:09.525378349Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+--- stage the payload OUTSIDE the guest so the restore cannot revert it away ---
+    (piped over stdin into a mode-0600 file in the broker container; never in argv, never printed)
+$ incus config get spike-guest-a user.spiffe-bootstrap --project spike-spiffe | incus exec spike-broker -- sh -c "umask 077; cat > /tmp/p10c7-pre.json"
+  -rw------- 1 root root 268 Aug 17 18:27 /tmp/p10c7-pre.json
+  field names: broker_fingerprint, broker_url, nonce, nonce_id
+  nonce_id (public): 44f0aeb0ff48f7358ef7c8f448beeb41
+
+### Case 7 — step 3: restore the snapshot and re-read the identity anchors
+2026-08-17T18:27:22Z
+$ incus snapshot restore ovh-incusos:spike-guest-a p10-c7-before --project spike-spiffe
+(exit 0)
+
+$ incus query ovh-incusos:/1.0/instances/spike-guest-a?project=spike-spiffe
+  POST-RESTORE uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  POST-RESTORE generation=37443652-6cce-4135-a88e-e8248e9d2a20
+  status=Running
+
+$ incus config get spike-guest-a user.spiffe-bootstrap --project spike-spiffe  (restored config reverted the key)
+  user.spiffe-bootstrap length after restore: 1 bytes
+
+--- wait for the restored guest to accept exec, then look at what survived inside it ---
+  exec available
+$ incus exec spike-guest-a -- uptime -s   (the restore restarted the VM)
+  2026-08-17 18:27:24
+$ incus exec spike-guest-a -- pgrep -a spire-agent
+  <no spire-agent process>
+$ incus exec spike-guest-a -- ls /tmp/spire-agent/public/api.sock  (the pre-restore Workload API socket)
+  ls: cannot access '/tmp/spire-agent/public/api.sock': No such file or directory
+$ incus exec spike-guest-a -- ls /run/spike-p9 /run/spike-exchange
+  ls: cannot access '/run/spike-p9': No such file or directory
+  ls: cannot access '/run/spike-exchange': No such file or directory
+
+### Case 7 — step 4: attempt the PRE-RESTORE bootstrap value after the restore
+2026-08-17T18:27:53Z
+nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41, minted against generation c32efc7b-f3d8-4637-9818-f8906c35543a,
+still inside its 10-minute TTL (expires 18:37:09Z), never used. Staged back into the guest over stdin.
+$ incus exec spike-broker -- cat /tmp/p10c7-pre.json | incus exec spike-guest-a -- sh -c "umask 077; cat > /run/p10c7-pre.json"
+  -rw------- 1 root root 268 Aug 17 18:27 /run/p10c7-pre.json
+  nonce_id in staged copy: 44f0aeb0ff48f7358ef7c8f448beeb41
+
+$ incus exec spike-guest-a -- env PAYLOAD_FILE=/run/p10c7-pre.json ... /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+source: staged payload /run/p10c7-pre.json (the guest socket was not read)
+payload: nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41
+payload: sha256=ac1c59ea844744d97c40109af7f0d8d3ba6535f94ab1002381abdf495481a414
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 409
+verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+         forbids redemption: already consumed, expired, bound to another instance, or the
+         generation moved. On a reboot this is the expected answer for a stale key: P9
+         needs a FRESH nonce per bootstrap.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41 broker_reason=conflict
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+BOOTSTRAP_EXIT=11
+
+--- broker-side reason for that 409, verbatim ---
+$ incus exec spike-broker -- journalctl -u incus-spiffe-broker --since 18:27:00 | grep 44f0aeb0ff48f7358ef7c8f448beeb41
+Aug 17 18:27:09 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:27:09.540791866Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"44f0aeb0ff48f7358ef7c8f448beeb41","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","expires_at":"2026-08-17T18:37:09.525378349Z"}
+Aug 17 18:27:56 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:27:56.226694846Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"44f0aeb0ff48f7358ef7c8f448beeb41","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:38556","http_status":409,"code":"conflict","reason":"nonce: instance generation changed: nonce 44f0aeb0ff48f7358ef7c8f448beeb41 was minted for an earlier generation of a955ca30-a0dc-4087-a369-37d53d389c5a"}
+
+--- was it rejected BEFORE or AFTER consumption? Re-submit the same value and compare. ---
+    A pre-consumption rejection leaves used=false, so the SECOND attempt must fail the same way
+    (generation), not with the "already used" reason.
+$ incus exec spike-guest-a -- env PAYLOAD_FILE=/run/p10c7-pre.json ... /root/p9/guest-agent-bootstrap.sh   (second attempt)
+redeem: HTTP 409
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=44f0aeb0ff48f7358ef7c8f448beeb41 broker_reason=conflict
+
+$ incus exec spike-broker -- journalctl ... | grep 44f0aeb0 (both attempts)
+Aug 17 18:27:09 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:27:09.540791866Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"44f0aeb0ff48f7358ef7c8f448beeb41","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","expires_at":"2026-08-17T18:37:09.525378349Z"}
+Aug 17 18:27:56 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:27:56.226694846Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"44f0aeb0ff48f7358ef7c8f448beeb41","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:38556","http_status":409,"code":"conflict","reason":"nonce: instance generation changed: nonce 44f0aeb0ff48f7358ef7c8f448beeb41 was minted for an earlier generation of a955ca30-a0dc-4087-a369-37d53d389c5a"}
+Aug 17 18:28:11 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:28:11.599377227Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"44f0aeb0ff48f7358ef7c8f448beeb41","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:53212","http_status":409,"code":"conflict","reason":"nonce: consume nonce 44f0aeb0ff48f7358ef7c8f448beeb41: nonce: nonce already used: id 44f0aeb0ff48f7358ef7c8f448beeb41"}
+
+$ incus config get spike-guest-a user.spiffe-bootstrap --project spike-spiffe  (still clear; nothing was written back)
+  bytes: 1
+
+### Case 7 — step 5: the pre-restore workload SVID expires and cannot be renewed with pre-restore credentials
+2026-08-17T18:28:39Z
+Recorded before the snapshot: spiffe://spike.incus.internal/guest/p10-c7-demo
+  serial=98770C369297D81D60A082E6D26821FA  notBefore=Aug 17 18:26:38 2026 GMT  notAfter=Aug 17 18:28:48 2026 GMT
+This is EXPIRATION plus absence of renewal. No revocation is claimed: SPIRE does not revoke X509-SVIDs.
+
+--- 5a. the pre-restore Workload API is simply gone ---
+$ incus exec spike-guest-a -- spire-agent healthcheck -socketPath /tmp/spire-agent/public/api.sock
+  Agent is unhealthy: unable to determine health
+$ incus exec spike-guest-a -- spire-agent api fetch x509 -socketPath /tmp/spire-agent/public/api.sock
+  rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial unix /tmp/spire-agent/public/api.sock: connect: no such file or directory"
+
+--- 5b. the restored on-disk agent state cannot bring the Workload API back ---
+$ incus exec spike-guest-a -- ls -la /var/lib/spire-agent
+  total 16
+  drwx------  2 root root 4096 Aug 17 17:55 .
+  drwxr-xr-x 19 root root 4096 Aug 17 17:03 ..
+  -rw-------  1 root root 3358 Aug 17 17:55 agent-data.json
+  -rw-r--r--  1 root root 1539 Aug 17 17:55 bundle.pem
+$ incus exec spike-guest-a -- <render the harness config and run the agent, 20s cap>
+  time="2026-08-17T18:28:37Z" level=debug msg="Unloading plugin" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+  time="2026-08-17T18:28:37Z" level=debug msg="Plugin deinitialized" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+  time="2026-08-17T18:28:37Z" level=info msg="Plugin unloaded" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+  time="2026-08-17T18:28:37Z" level=error msg="Agent crashed" error="failed to configure plugin \"x509pop\": rpc error: code = InvalidArgument desc = unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory"
+
+--- 5c. wait past the recorded not_after and confirm the pre-restore SVID is now expired ---
+$ date -u
+  now = 2026-08-17T18:29:43Z
+  recorded not_after = 2026-08-17T18:28:48Z (Aug 17 18:28:48 2026 GMT)
+  expired = True (now - not_after = 0:00:55.342524)
+
+--- 5d. the temporary entry still EXISTS, so the failure is expiry plus no renewal, not a deleted entry ---
+$ incus exec spire-server -- spire-server entry show -entryID 9932dab6-7504-4102-88a1-f4f288bd54ce
+  Found 1 entry
+  Entry ID                : 9932dab6-7504-4102-88a1-f4f288bd54ce
+  SPIFFE ID               : spiffe://spike.incus.internal/guest/p10-c7-demo
+  Parent ID               : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+  Revision                : 0
+  X509-SVID TTL           : 120
+  JWT-SVID TTL            : default
+  Selector                : unix:uid:0
+  
+
+--- 5e. one more renewal attempt with everything the guest still has ---
+$ incus exec spike-guest-a -- spire-agent api fetch x509 -socketPath /tmp/spire-agent/public/api.sock
+  rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial unix /tmp/spire-agent/public/api.sock: connect: no such file or directory"
+  (there is no other credential in the guest: /run/spike-exchange is gone, agent-data.json holds
+   certificates only, and the pre-restore nonce is now consumed.)
+
+--- 5f. server-side node record during this window ---
+$ incus exec spire-server -- spire-server agent list
+  Found 2 attested agents:
+  
+  SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+  Attestation type  : tpm_devid
+  Expiration time   : 2026-08-17 19:10:18 +0000 UTC
+  Serial number     : 242286826386577536710300857543115429998
+  Can re-attest     : true
+  Agent version     : 1.15.2
+  
+  SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+  Attestation type  : x509pop
+  Expiration time   : 2026-08-17 18:55:31 +0000 UTC
+  Serial number     : 142664646892380702363741184904059716611
+  Can re-attest     : true
+  Agent version     : 1.15.2
+  
+
+### Case 7 — step 6: re-bootstrap guest A with a FRESH value, canonical P9 harness, default retention
+2026-08-17T18:29:59Z
+No CHAIN_JQ / KEY_JQ / BUNDLE_JQ, no PAYLOAD_FILE, no hand-editing; EXCHANGE_RETENTION left at its
+default (shred). The guest reads the value from its own /dev/incus/sock.
+
+$ incus exec spike-broker -- env ... /root/p8/operator-mint.sh a955ca30-a0dc-4087-a369-37d53d389c5a spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+RESULT mint outcome=minted status=201 nonce_id=2ebc2abaf8386dfbd341c8d62d419e20 expires_at=2026-08-17T18:40:00.417067031Z instance_name=spike-guest-a generation_uuid=37443652-6cce-4135-a88e-e8248e9d2a20 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+$ incus exec spike-guest-a -- env SPIRE_SERVER_ADDRESS=10.55.156.67 SPIRE_SERVER_PORT=8081 TRUST_DOMAIN=spike.incus.internal BROKER_CACERT=/root/p9/broker-ca.pem /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=2ebc2abaf8386dfbd341c8d62d419e20
+payload: sha256=68a25ce380b3333973e66f69a59cef36a7438d1e389a4d72ec6a216215a2a6f9
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=2ebc2abaf8386dfbd341c8d62d419e20
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=37443652-6cce-4135-a88e-e8248e9d2a20
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:37443652-6cce-4135-a88e-e8248e9d2a20,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+exchange: private key parses and matches the certificate (public-key digests equal)
+exchange: certificate_path=/run/spike-exchange/svid.pem chain_certs=1 (leaf first; x509pop accepts leaf+intermediates in one file)
+exchange: private_key_path=/run/spike-exchange/svid.key mode=0600 (tmpfs only, never written to a persistent guest filesystem)
+exchange: trust_bundle_path=/run/spike-exchange/bundle.pem bundle_certs=2
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a (read from the certificate, which is authoritative)
+exchange: serial=036C59DF90D7DDA40F0DE6A11F480DC1 not_before=Aug 17 18:29:34 2026 GMT not_after=Aug 17 18:31:44 2026 GMT
+exchange: response exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_expires_at=2026-08-17T18:31:44Z
+exchange: expected_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: trust bundle persisted to /var/lib/spire-agent/bundle.pem (public material, Appendix D rule 3) so the agent can be restarted
+agent: rendered /run/spike-p9/agent.conf from /root/p9/agent.conf.template
+agent: trust_domain=spike.incus.internal server=10.55.156.67:8081 data_dir=/var/lib/spire-agent
+agent: socket_path=/tmp/spire-agent/public/api.sock key_manager=memory trust_bundle_path=/var/lib/spire-agent/bundle.pem
+agent: spire-agent validate -config accepted the rendered configuration
+agent: started spire-agent run -config /run/spike-p9/agent.conf pid=953 log=/run/spike-p9/spire-agent.log
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: healthcheck ready on /tmp/spire-agent/public/api.sock (standard Workload API is serving)
+agent: expected_node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: workload_api=/tmp/spire-agent/public/api.sock socket=srwxrwxrwx root:root dir=drwxr-xr-x root:root
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+note: the exchange credential is gone and the agent keeps running on the node SVID it
+      obtained. It cannot re-attest: x509pop reloads certificate_path and
+      private_key_path on every attestation, and a restart from here dies with
+      'unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory'.
+      A restart or reboot therefore needs a FRESH nonce: one bootstrap per boot,
+      chosen rather than discovered. AGENT_KEY_MANAGER=memory.
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=2ebc2abaf8386dfbd341c8d62d419e20 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 18:31:44 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_retention=shred exchange_material=shredded-and-unmounted
+BOOTSTRAP_EXIT=0
+
+--- 6a. same node SPIFFE ID, NEW node SVID: the identity is derived from the stable UUID, the credential is not ---
+$ incus exec spire-server -- spire-server agent list
+  Found 2 attested agents:
+  
+  SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+  Attestation type  : tpm_devid
+  Expiration time   : 2026-08-17 19:10:18 +0000 UTC
+  Serial number     : 242286826386577536710300857543115429998
+  Can re-attest     : true
+  Agent version     : 1.15.2
+  
+  SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+  Attestation type  : x509pop
+  Expiration time   : 2026-08-17 19:30:01 +0000 UTC
+  Serial number     : 43821240236870179814166160036431104854
+  Can re-attest     : true
+  Agent version     : 1.15.2
+  
+  pre-restore node serial was 142664646892380702363741184904059716611
+
+--- 6b. new in-guest agent state and process ---
+$ incus exec spike-guest-a -- pgrep -a spire-agent; ls -la /var/lib/spire-agent
+  953 spire-agent run -config /run/spike-p9/agent.conf
+  total 16
+  drwx------  2 root root 4096 Aug 17 18:29 .
+  drwxr-xr-x 19 root root 4096 Aug 17 17:03 ..
+  -rw-------  1 root root 3358 Aug 17 18:29 agent-data.json
+  -rw-r--r--  1 root root 1539 Aug 17 18:29 bundle.pem
+
+--- 6c. a FRESH temporary entry, and the Workload API serving under it ---
+$ spire-server entry create -parentID <A node> -spiffeID .../guest/p10-c7-after -selector unix:uid:0 -x509SVIDTTL 300
+  Entry ID                : 98c7d29a-03ea-4b39-8441-66c9ad4fd88b
+  SPIFFE ID               : spiffe://spike.incus.internal/guest/p10-c7-after
+  Parent ID               : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+  Revision                : 0
+  X509-SVID TTL           : 300
+  JWT-SVID TTL            : default
+  Selector                : unix:uid:0
+  
+$ incus exec spike-guest-a -- spire-agent api fetch x509 -socketPath /tmp/spire-agent/public/api.sock
+  Received 2 svids after 2.112842ms
+  
+  SPIFFE ID:		spiffe://spike.incus.internal/guest/p10-c7-after
+  SVID Valid After:	2026-08-17 18:30:15 +0000 UTC
+  SVID Valid Until:	2026-08-17 18:35:25 +0000 UTC
+  CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+  CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+  CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+  CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+  
+  SPIFFE ID:		spiffe://spike.incus.internal/guest/p10-c7-demo
+  SVID Valid After:	2026-08-17 18:29:51 +0000 UTC
+  SVID Valid Until:	2026-08-17 18:32:01 +0000 UTC
+  CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+  CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+  CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+  CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+  
+
+--- 6d. the re-issued /guest/p10-c7-demo SVID is a DIFFERENT certificate from the expired one ---
+    (the entry was never deleted, so the identity is grantable again — but only to a guest that
+     re-bootstrapped. The pre-restore certificate itself stays expired and was never renewed.)
+  spiffe://spike.incus.internal/guest/p10-c7-after serial=3430816DA9B79ED3C76A4DB6BABC63D9 notAfter=Aug 17 18:35:25 2026 GMT
+  spiffe://spike.incus.internal/guest/p10-c7-demo serial=CBD83E2AA2F3344806E6571D53D26EEB notAfter=Aug 17 18:32:01 2026 GMT
+  pre-restore /guest/p10-c7-demo serial was 98770C369297D81D60A082E6D26821FA, notAfter Aug 17 18:28:48 2026 GMT
+
+### Case 7 — step 7: cleanup
+2026-08-17T18:30:53Z
+$ spire-server entry delete -entryID 9932dab6-7504-4102-88a1-f4f288bd54ce
+  Deleted entry with ID: 9932dab6-7504-4102-88a1-f4f288bd54ce
+  
+  
+  Deleted 1 entries successfully$ spire-server entry delete -entryID 98c7d29a-03ea-4b39-8441-66c9ad4fd88b
+  Deleted entry with ID: 98c7d29a-03ea-4b39-8441-66c9ad4fd88b
+  
+  
+  Deleted 1 entries successfully$ incus snapshot delete ovh-incusos:spike-guest-a p10-c7-before --project spike-spiffe
+  (exit 0)
+$ remove the staged pre-restore payload copies (both held the nonce SECRET)
+  broker: ls: cannot access '/tmp/p10c7-pre.json': No such file or directory
+  guest:  ls: cannot access '/run/p10c7-pre.json': No such file or directory
+$ remove the throwaway rendered configs
+  ls: cannot access '/run/p10c7': No such file or directory

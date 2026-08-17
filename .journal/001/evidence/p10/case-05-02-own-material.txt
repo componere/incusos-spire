@@ -1,0 +1,98 @@
+### case-05-02 — actions 3 and 4 (Q2: B's own material, with A's UUID claimed)
+### 2026-08-17T18:08:58Z
+
+A's value minted in case-05-01 (nonce_id=d674d58ac0450aa9bbe3242daf9d3188) is still
+outstanding and UNREDEEMED throughout this file. Nothing here touches it.
+
+--- 3.1 mint B's OWN bootstrap material ---
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=e91f85e8af07a606a5a0952b62620fb9
+  expires_at=2026-08-17T18:18:59.641644886Z
+  instance_name=spike-guest-b
+  generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+  instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=e91f85e8af07a606a5a0952b62620fb9 expires_at=2026-08-17T18:18:59.641644886Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe
+
+--- 3.2 B reads ITS OWN value from ITS OWN socket into mode-0600 tmpfs scratch ---
+    (--output to the scratch file; nothing but the HTTP code reaches stdout)
+socket_read(B, user.spiffe-bootstrap): HTTP 200
+scratch: -rw------- root:root 267 bytes /run/p10c5/b-payload.json
+payload fields present: broker_fingerprint,broker_url,nonce,nonce_id
+payload nonce_id       : e91f85e8af07a606a5a0952b62620fb9
+payload nonce          : <redacted, present=true>
+
+--- 3.3 construct the redeem body WITH A's UUID as an extra claimed field ---
+    built by jq from the scratch payload straight into another 0600 scratch file:
+    jq -c '{nonce_id, nonce, instance_uuid: "a955ca30-a0dc-4087-a369-37d53d389c5a"}'
+    the credential never enters argv, a shell variable, or a log line.
+body-claim-a.json: instance_uuid,nonce,nonce_id (178 bytes, mode 600)
+claimed instance_uuid in body: a955ca30-a0dc-4087-a369-37d53d389c5a  (= A)
+source instance is B         : a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+
+--- 4.1 SUBMIT FROM B: B's own nonce + A's UUID claimed ---
+$ incus exec spike-guest-b -- curl --silent --show-error --cacert /root/p9/broker-ca.pem -H "Content-Type: application/json" --data-binary @/run/p10c5/body-claim-a.json --output /run/p10c5/resp-claim-a.json --write-out "%{http_code}" https://10.55.156.44:8443/v1alpha1/redeem
+HTTP_STATUS=400
+RESPONSE_BODY_BYTES=28
+response carries any exchange/credential field: 0
+verbatim response body:
+  {"error":"invalid_request"}
+
+  The claimed identity is not merely ignored: the redeem decoder calls
+  DisallowUnknownFields (cmd/incus-spiffe-broker/service.go:1233), and
+  redeemRequest has no instance_uuid member at all (service.go:335-351), so a
+  caller-asserted UUID is REFUSED with HTTP 400 before any nonce state is touched.
+  B's nonce was therefore NOT consumed by this attempt — proved next.
+
+--- 4.2 SUBMIT FROM B: the same nonce, clean body (nonce_id + nonce only) ---
+    this is the authoritative-binding probe: what does the broker resolve
+    B's own material to, now that no identity can be claimed?
+body-clean.json fields: nonce,nonce_id
+HTTP_STATUS=503
+RESPONSE_BODY_BYTES=40
+response carries any exchange/credential field: 0
+verbatim response body:
+  {"error":"nonce_consumed_without_svid"}
+
+--- 4.3 broker log, verbatim, filtered to this case's two submissions only ---
+    (the broker journal also holds unrelated P8/P9/P10 history; only the three
+     lines produced by 3.1, 4.1 and 4.2 are reproduced here)
+{"time":"2026-08-17T18:08:59.657890384Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"e91f85e8af07a606a5a0952b62620fb9","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","generation":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","expires_at":"2026-08-17T18:18:59.641644886Z"}
+{"time":"2026-08-17T18:09:45.399616193Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"e91f85e8af07a606a5a0952b62620fb9","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","project":"spike-spiffe"}
+{"time":"2026-08-17T18:09:53.714516927Z","level":"ERROR","msg":"nonce consumed but no exchange SVID was issued","operation":"redeem","outcome":"burned","nonce_id":"e91f85e8af07a606a5a0952b62620fb9","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","failure_class":"broker_no_svid","peer_address":"10.55.156.75:55252","http_status":503,"code":"nonce_consumed_without_svid","reason":"broker delivered no X.509-SVID: response carried an empty SVID list"}
+{"time":"2026-08-17T18:09:33.247292143Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.75:32980","http_status":400,"code":"invalid_request","reason":"decode request body: json: unknown field \"instance_uuid\""}
+    (the 400 line above is chronologically the second of the four: mint 18:08:59,
+     refusal 18:09:33, key cleared 18:09:45, burn 18:09:53. It is printed last only
+     because it carries no nonce_id and had to be selected by a second filter.)
+
+--- 4.4 was ANY exchange identity issued for A during this window? ---
+$ journalctl -u incus-spiffe-broker --since 18:08:50 --until 18:10:00 | grep -c exchange_spiffe_id
+exchange_spiffe_id occurrences in the Q2 window = 0
+
+--- 4.5 Q2 result table ---
+  source instance (where the request came from) : spike-guest-b a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+  claimed instance (extra field in the body)    : spike-guest-a a955ca30-a0dc-4087-a369-37d53d389c5a
+  authoritative bound instance (broker-resolved): spike-guest-b a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+  claimed-UUID submission  : HTTP 400 code=invalid_request outcome=denied
+                             reason=decode request body: json: unknown field "instance_uuid"
+                             nonce NOT consumed (the same nonce still redeemed at 4.2)
+  clean submission         : HTTP 503 code=nonce_consumed_without_svid outcome=burned
+                             failure_class=broker_no_svid
+                             reason=broker delivered no X.509-SVID: response carried an empty SVID list
+  A exchange identity issued: NO (0 exchange_spiffe_id log lines in the window; both
+                             response bodies carried 0 exchange/credential fields)
+  B exchange identity issued: NO (no registration entry has selector incus:uuid:a4fec3ea-...)
+
+  Status alone is not the proof, exactly as the plan warns. The 503 is a POST-consumption
+  burn, which means the broker had already resolved the binding before issuance was
+  attempted; the log line names that resolved binding as instance_uuid=a4fec3ea-... —
+  B — and the 'bootstrap key cleared' line names instance_name=spike-guest-b, i.e. the
+  broker went back to B's own config key to clear it. The failure is 'no entry matched
+  B's selectors', not 'A's identity was refused at the last moment'. B's own material
+  bound to B on the authoritative path, and A's UUID never entered the resolution at all.

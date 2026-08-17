@@ -1,0 +1,112 @@
+### Case 8 — Proxy B: stopped export then import under a new name
+2026-08-17T17:01:34Z
+(instance p10-mig1 now lives in project spike-p10-mig-b after Proxy A; the export is taken from there)
+
+$ incus stop ovh-incusos:p10-mig1 --project spike-p10-mig-b
+(exit 0)
+B0 original before export | name=p10-mig1 project=spike-p10-mig-b type=container status=Stopped location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+$ incus export ovh-incusos:p10-mig1 /tmp/p10-mig1.tar.gz --project spike-p10-mig-b
+Exporting the backup: 9.47MB (9.31MB/s)Exporting the backup: 19.53MB (9.68MB/s)                                         Exporting the backup: 28.08MB (9.29MB/s)Exporting the backup: 41.71MB (10.36MB/s)                                          Backup exported successfully!
+time="2026-08-17T10:01:41-07:00" level=warning msg="Failed to close target file" err="close /tmp/p10-mig1.tar.gz: file already closed"
+(exit 0)
+-rw-r--r-- 1 josh wheel 49608881 Aug 17 10:01 /tmp/p10-mig1.tar.gz
+
+--- what the backup metadata records for the identity keys (read straight out of the tarball)
+name: p10-mig1
+backend: zfs
+pool: local
+optimized: false
+optimized_header: false
+$ tar -xzOf /tmp/p10-mig1.tar.gz backup/index.yaml | grep -E 'volatile.uuid|^ *name:|project'
+1:name: p10-mig1
+32:      volatile.uuid: 88013ade-522b-461c-8617-5e8dee9d0c9e
+33:      volatile.uuid.generation: 88013ade-522b-461c-8617-5e8dee9d0c9e
+63:      volatile.uuid: 88013ade-522b-461c-8617-5e8dee9d0c9e
+64:      volatile.uuid.generation: 88013ade-522b-461c-8617-5e8dee9d0c9e
+80:    project: spike-p10-mig-b
+107:      project: default
+116:    project: spike-p10-mig-b
+
+$ incus import ovh-incusos:/tmp/p10-mig1.tar.gz --project spike-p10-mig-b (import under a NEW name)
+Importing instance: 1% (3.54MB/s)                                  Importing instance: 2% (5.47MB/s)                                  Importing instance: 3% (6.80MB/s)                                  Importing instance: 4% (7.18MB/s)                                  Importing instance: 5% (7.49MB/s)                                  Importing instance: 6% (8.15MB/s)                                  Importing instance: 7% (8.46MB/s)                                  Importing instance: 8% (5.05MB/s)                                  Importing instance: 9% (5.68MB/s)Importing instance: 10% (5.76MB/s)                                   Importing instance: 11% (5.55MB/s)                                   Importing instance: 12% (4.50MB/s)                                   Importing instance: 13% (4.88MB/s)                                   Importing instance: 13% (4.92MB/s)                                   Importing instance: 14% (4.88MB/s)                                   Importing instance: 15% (4.86MB/s)                                   Importing instance: 16% (4.91MB/s)                                   Importing instance: 17% (4.86MB/s)                                   Importing instance: 18% (4.83MB/s)                                   Importing instance: 19% (4.82MB/s)                                   Importing instance: 20% (4.84MB/s)                                   Importing instance: 21% (4.89MB/s)                                   Importing instance: 22% (4.88MB/s)                                   Importing instance: 23% (4.85MB/s)                                   Importing instance: 24% (4.92MB/s)                                   Importing instance: 25% (4.61MB/s)                                   Importing instance: 25% (4.77MB/s)                                   Importing instance: 26% (4.88MB/s)                                   Importing instance: 27% (4.85MB/s)                                   Importing instance: 28% (4.86MB/s)                                   Importing instance: 29% (4.62MB/s)                                   Importing instance: 30% (4.67MB/s)                                   Importing instance: 31% (4.60MB/s)                                   Importing instance: 32% (4.58MB/s)                                   Importing instance: 33% (4.60MB/s)                                   Importing instance: 34% (4.60MB/s)                                   Importing instance: 35% (4.60MB/s)                                   Importing instance: 36% (4.63MB/s)                                   Importing instance: 37% (4.63MB/s)                                   Importing instance: 37% (4.63MB/s)                                   Importing instance: 38% (4.65MB/s)                                   Importing instance: 39% (4.64MB/s)                                   Importing instance: 40% (4.63MB/s)                                   Importing instance: 41% (4.67MB/s)                                   Importing instance: 42% (4.66MB/s)                                   Importing instance: 43% (4.65MB/s)                                   Importing instance: 44% (4.66MB/s)                                   Importing instance: 45% (4.67MB/s)                                   Importing instance: 46% (4.67MB/s)                                   Importing instance: 47% (4.68MB/s)                                   Importing instance: 48% (4.66MB/s)                                   Importing instance: 49% (4.67MB/s)                                   Importing instance: 50% (4.67MB/s)                                   Importing instance: 50% (4.68MB/s)                                   Importing instance: 51% (4.69MB/s)                                   Importing instance: 52% (4.70MB/s)                                   Importing instance: 53% (4.70MB/s)                                   Importing instance: 54% (4.70MB/s)                                   Importing instance: 55% (4.70MB/s)                                   Importing instance: 56% (4.71MB/s)                                   Importing instance: 57% (4.70MB/s)                                   Importing instance: 58% (4.69MB/s)                                   Importing instance: 59% (4.71MB/s)                                   Importing instance: 60% (4.70MB/s)                                   Importing instance: 61% (4.70MB/s)                                   Importing instance: 62% (4.71MB/s)                                   Importing instance: 62% (4.71MB/s)                                   Importing instance: 63% (4.72MB/s)                                   Importing instance: 64% (4.71MB/s)                                   Importing instance: 65% (4.73MB/s)                                   Importing instance: 66% (4.72MB/s)                                   Importing instance: 67% (4.73MB/s)                                   Importing instance: 68% (4.72MB/s)                                   Importing instance: 69% (4.71MB/s)                                   Importing instance: 70% (4.73MB/s)                                   Importing instance: 71% (4.71MB/s)                                   Importing instance: 72% (4.72MB/s)                                   Importing instance: 73% (4.72MB/s)                                   Importing instance: 74% (4.73MB/s)                                   Importing instance: 74% (4.72MB/s)                                   Importing instance: 75% (4.73MB/s)                                   Importing instance: 76% (4.72MB/s)                                   Importing instance: 77% (4.72MB/s)                                   Importing instance: 78% (4.74MB/s)                                   Importing instance: 79% (4.72MB/s)                                   Importing instance: 80% (4.74MB/s)                                   Importing instance: 81% (4.71MB/s)                                   Importing instance: 82% (4.72MB/s)                                   Importing instance: 83% (4.71MB/s)                                   Importing instance: 84% (4.72MB/s)                                   Importing instance: 85% (4.71MB/s)                                   Importing instance: 86% (4.71MB/s)                                   Importing instance: 87% (4.71MB/s)                                   Importing instance: 87% (4.73MB/s)                                   Importing instance: 88% (4.72MB/s)                                   Importing instance: 89% (4.71MB/s)                                   Importing instance: 90% (4.71MB/s)                                   Importing instance: 91% (4.70MB/s)                                   Importing instance: 92% (4.62MB/s)                                   Importing instance: 93% (4.65MB/s)                                   Importing instance: 94% (4.65MB/s)                                   Importing instance: 95% (4.66MB/s)                                   Importing instance: 96% (4.66MB/s)                                   Importing instance: 97% (4.67MB/s)                                   Importing instance: 98% (4.66MB/s)                                   Importing instance: 99% (4.67MB/s)                                   Importing instance: 99% (4.67MB/s)Importing instance: 100% (4.66MB/s)                                    time="2026-08-17T10:01:53-07:00" level=warning msg="Failed to close file" err="close /tmp/p10-mig1.tar.gz: file already closed"
+(exit 0)
+B1 imported instance | name=p10-mig1-imported project=spike-p10-mig-b type=container status=Stopped location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+B1 original, unchanged? | name=p10-mig1 project=spike-p10-mig-b type=container status=Stopped location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+==========================================================================
+--- B2: the import produced a DUPLICATE volatile.uuid. Confirm via the lookup surface the attestor uses.
+$ incus query 'ovh-incusos:/1.0/instances?recursion=1&project=spike-p10-mig-b&filter=config.volatile.uuid eq 88013ade-522b-461c-8617-5e8dee9d0c9e' | jq '[.[]|{project,name,status,created_at,gen:.config."volatile.uuid.generation"}]'
+[
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1",
+    "status": "Stopped",
+    "created_at": "2026-08-17T17:01:13.084922021Z",
+    "gen": "88013ade-522b-461c-8617-5e8dee9d0c9e"
+  },
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1-imported",
+    "status": "Stopped",
+    "created_at": "2026-08-17T17:01:13.084922021Z",
+    "gen": "88013ade-522b-461c-8617-5e8dee9d0c9e"
+  }
+]
+
+$ incus list ovh-incusos: --project spike-p10-mig-b config.volatile.uuid=88013ade-522b-461c-8617-5e8dee9d0c9e --format csv -c ns
+p10-mig1,STOPPED
+p10-mig1-imported,STOPPED
+
+--- B3: does starting the imported copy change either key? (a fresh boot is the only chance Incus has to notice)
+$ incus start ovh-incusos:p10-mig1-imported --project spike-p10-mig-b
+Error: Failed start validation for device "eth0": MAC address "10:66:6a:50:8b:63" already defined on another NIC
+(exit 1)
+B3 imported after first start | name=p10-mig1-imported project=spike-p10-mig-b type=container status=Stopped location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+$ incus start ovh-incusos:p10-mig1 --project spike-p10-mig-b   (original, now running alongside)
+Error: Failed start validation for device "eth0": MAC address "10:66:6a:50:8b:63" already defined on another NIC
+(exit 1)
+B3 original after restart | name=p10-mig1 project=spike-p10-mig-b type=container status=Stopped location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+--- B4: both instances running, same UUID, filter still returns two
+[
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1",
+    "status": "Stopped"
+  },
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1-imported",
+    "status": "Stopped"
+  }
+]
+
+--- B5: Incus DOES enforce NIC MAC uniqueness but NOT volatile.uuid uniqueness.
+     Clear the imported copy's inherited MAC and start both, to show the duplicate UUID is live, not merely a stale record.
+$ incus config unset ovh-incusos:p10-mig1-imported volatile.eth0.hwaddr --project spike-p10-mig-b
+(exit 0)
+$ incus start ovh-incusos:p10-mig1-imported --project spike-p10-mig-b
+(exit 0)
+$ incus start ovh-incusos:p10-mig1 --project spike-p10-mig-b
+(exit 0)
+B5 original, running | name=p10-mig1 project=spike-p10-mig-b type=container status=Running location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+B5 imported, running | name=p10-mig1-imported project=spike-p10-mig-b type=container status=Running location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+--- B6: two RUNNING instances share one volatile.uuid; the attestor's own lookup returns both -> P6 §3 multi-match hard-fail
+[
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1",
+    "status": "Running",
+    "uuid": "88013ade-522b-461c-8617-5e8dee9d0c9e",
+    "gen": "88013ade-522b-461c-8617-5e8dee9d0c9e"
+  },
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1-imported",
+    "status": "Running",
+    "uuid": "88013ade-522b-461c-8617-5e8dee9d0c9e",
+    "gen": "88013ade-522b-461c-8617-5e8dee9d0c9e"
+  }
+]

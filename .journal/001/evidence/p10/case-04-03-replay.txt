@@ -1,0 +1,67 @@
+### case-04-03 — REPLAY of the SAME nonce value, from inside guest A, after redemption
+### 2026-08-17T17:04:15Z
+
+The nonce value replayed here is byte-identical to the one the successful run in
+case-04-02-chain.txt consumed: it was copied out of user.spiffe-bootstrap BEFORE
+redemption by piping stdout into the guest's stdin, and its nonce_id is
+6f6a834cc2d0fc807fd9bf14f91a24ad — the same nonce_id the broker granted.
+
+--- 1. the saved copy is still present and still names the consumed nonce ---
+-rw------- 1 root root 268 Aug 17 17:03 /run/replay-payload.json
+nonce_id=6f6a834cc2d0fc807fd9bf14f91a24ad
+field names present: broker_fingerprint,broker_url,nonce,nonce_id
+
+--- 2. harness replay via PAYLOAD_FILE (the guest socket no longer carries the key) ---
+$ incus exec spike-guest-a --project spike-spiffe -- env PAYLOAD_FILE=/run/replay-payload.json SPIRE_SERVER_ADDRESS=10.55.156.67 SPIRE_SERVER_PORT=8081 TRUST_DOMAIN=spike.incus.internal BROKER_CACERT=/root/p9/broker-ca.pem /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+source: staged payload /run/replay-payload.json (the guest socket was not read)
+payload: nonce_id=6f6a834cc2d0fc807fd9bf14f91a24ad
+payload: sha256=9c684ea0e05b5daa7d18c293a60ddfbc9218ceb438fb663aec0100b83b01deb6
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=6f6a834cc2d0fc807fd9bf14f91a24ad
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 409
+verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+         forbids redemption: already consumed, expired, bound to another instance, or the
+         generation moved. On a reboot this is the expected answer for a stale key: P9
+         needs a FRESH nonce per bootstrap.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=6f6a834cc2d0fc807fd9bf14f91a24ad broker_reason=conflict
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+EXIT=11
+
+--- 3. VERBATIM wire evidence: raw replay of the same nonce, status line and body ---
+    The request body {nonce_id, nonce} is built by jq from the staged file and piped
+    into curl on stdin (--data-binary @-), so the nonce never enters argv. Only the
+    REFUSAL body is printed, and it is printed byte-for-byte.
+HTTP_STATUS=409
+RESPONSE_BODY_BYTES=21
+RESPONSE_BODY_VERBATIM_BEGIN
+{"error":"conflict"}
+
+RESPONSE_BODY_VERBATIM_END
+grep -c for any exchange/private-key field in the refusal body:
+0
+0 (the refusal carries no credential material)
+
+--- 4. broker log lines for nonce 6f6a834cc2d0fc807fd9bf14f91a24ad: grant, then both refusals ---
+{"time":"2026-08-17T17:03:21.284156582Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","expires_at":"2026-08-17T17:13:21.269029225Z"}
+{"time":"2026-08-17T17:03:46.837535472Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+{"time":"2026-08-17T17:03:46.845684568Z","level":"INFO","msg":"bootstrap nonce redeemed","operation":"redeem","outcome":"granted","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","exchange_spiffe_id":"spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a","exchange_expires_at":"2026-08-17T17:05:38Z","http_status":200}
+{"time":"2026-08-17T17:04:17.617743892Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:42400","http_status":409,"code":"conflict","reason":"nonce: consume nonce 6f6a834cc2d0fc807fd9bf14f91a24ad: nonce: nonce already used: id 6f6a834cc2d0fc807fd9bf14f91a24ad"}
+{"time":"2026-08-17T17:04:47.405727818Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"6f6a834cc2d0fc807fd9bf14f91a24ad","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:45266","http_status":409,"code":"conflict","reason":"nonce: consume nonce 6f6a834cc2d0fc807fd9bf14f91a24ad: nonce: nonce already used: id 6f6a834cc2d0fc807fd9bf14f91a24ad"}
+
+--- 5. any outcome=burned / nonce_consumed_without_svid in the whole window? ---
+0
+0 — no burn path was taken
+
+--- 6. cleanup: the staged replay copy of the nonce is destroyed ---
+ls: cannot access '/run/replay-payload.json': No such file or directory
+proof of removal: `ls -l /run/replay-payload.json` above

@@ -1,0 +1,49 @@
+### Case 8 — Proxy A: cross-project move (incus move --project X --target-project Y)
+2026-08-17T17:00:39Z
+instance type: CONTAINER (justification in the fragment: P6 showed no container/VM divergence in uuid/generation semantics)
+
+$ incus project create ovh-incusos:spike-p10-mig-a -c features.images=false -c features.profiles=false -c features.networks=false
+Project ovh-incusos:spike-p10-mig-a created
+$ incus project create ovh-incusos:spike-p10-mig-b -c features.images=false -c features.profiles=false -c features.networks=false
+Project ovh-incusos:spike-p10-mig-b created
+
+$ incus launch docker:debian:trixie ovh-incusos:p10-mig1 --project spike-p10-mig-a -c oci.entrypoint='sleep infinity'
+Launching ovh-incusos:p10-mig1
+A0 after create (running) | name=p10-mig1 project=spike-p10-mig-a type=container status=Running location=none created_at=2026-08-17T17:00:42.256298558Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+--- attempt the move while RUNNING (does Incus allow a live cross-project move?)
+$ incus move ovh-incusos:p10-mig1 ovh-incusos:p10-mig1 --project spike-p10-mig-a --target-project spike-p10-mig-b
+Error: Migration API failure: Instance must be stopped to be moved across projects
+(exit 1)
+A1 post-move attempt, source project | name=p10-mig1 project=spike-p10-mig-a type=container status=Running location=none created_at=2026-08-17T17:00:42.256298558Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+A1 post-move attempt, target project: LOOKUP FAILED: Error: Failed to fetch instance "p10-mig1" in project "spike-p10-mig-b": Instance not found
+
+--- stop, then move across projects
+$ incus stop ovh-incusos:p10-mig1 --project spike-p10-mig-a
+(exit 0)
+A2 after stop, source project | name=p10-mig1 project=spike-p10-mig-a type=container status=Stopped location=none created_at=2026-08-17T17:00:42.256298558Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+$ incus move ovh-incusos:p10-mig1 ovh-incusos:p10-mig1 --project spike-p10-mig-a --target-project spike-p10-mig-b
+(exit 0)
+A3 after move, old project (expect not found): LOOKUP FAILED: Error: Failed to fetch instance "p10-mig1" in project "spike-p10-mig-a": Instance not found
+A3 after move, new project | name=p10-mig1 project=spike-p10-mig-b type=container status=Stopped location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+$ incus start ovh-incusos:p10-mig1 --project spike-p10-mig-b
+(exit 0)
+A4 after start in new project | name=p10-mig1 project=spike-p10-mig-b type=container status=Running location=none created_at=2026-08-17T17:01:13.084922021Z uuid=88013ade-522b-461c-8617-5e8dee9d0c9e generation=88013ade-522b-461c-8617-5e8dee9d0c9e base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+--- selector-shaped view of the move (what the frozen P6 selector set would emit before vs after)
+before: incus:uuid:88013ade-522b-461c-8617-5e8dee9d0c9e incus:generation:88013ade-522b-461c-8617-5e8dee9d0c9e incus:project:spike-p10-mig-a incus:name:p10-mig1
+after : incus:uuid:88013ade-522b-461c-8617-5e8dee9d0c9e incus:generation:88013ade-522b-461c-8617-5e8dee9d0c9e incus:project:spike-p10-mig-b incus:name:p10-mig1
+
+--- UUID lookup surface after the move (all-projects filter)
+$ incus query 'ovh-incusos:/1.0/instances?recursion=1&all-projects=true&filter=config.volatile.uuid eq 88013ade-522b-461c-8617-5e8dee9d0c9e' | jq '[.[]|{project,name,status}]'
+[
+  {
+    "project": "spike-p10-mig-b",
+    "name": "p10-mig1",
+    "status": "Running"
+  }
+]
+$ same filter scoped to the OLD project spike-p10-mig-a
+{
+  "matches": 0
+}

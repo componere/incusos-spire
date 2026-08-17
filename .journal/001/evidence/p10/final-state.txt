@@ -1,0 +1,138 @@
+### P10 batch (cases 8 and 9) — final state verification
+2026-08-17T17:07:34Z
+
+$ incus list ovh-incusos: --all-projects --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+
+$ incus project list ovh-incusos: --format csv -c n
+default (current)
+spike-spiffe
+
+$ incus storage volume list ovh-incusos:local --format csv -c ntu
+7fb36bfa227889b8942b10efe53c3476390791668da093a96ccc09a7f3b5b1f5,image,1
+a5cadb6ee911ed34dffa3b91d9e760568f79f32c5db981ebf61bb5c8e1b18622,image,1
+backups,custom,1
+cc908044b88b0f11437c04db7865851111fa620afb395669799b6cfa25359f4e,image,1
+f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16,image,1
+images,custom,1
+logs,custom,1
+spike-broker,container,1
+spike-broker-state,custom,1
+spike-ca-state,custom,1
+spike-p3-stage,container,1
+spike-probe,container,1
+spike-spire-agent-state,custom,3
+spike-spire-server-state,custom,1
+spire-agent,container,1
+spire-server,container,1
+
+$ incus image list ovh-incusos: --format csv -c fdt
+7fb36bfa2278,Debian trixie amd64 (20260817_05:24),CONTAINER
+a5cadb6ee911,ghcr.io/spiffe/spire-agent (OCI),CONTAINER
+cc908044b88b,ghcr.io/spiffe/spire-server (OCI),CONTAINER
+f005c3b83cc4,docker.io/library/debian (OCI),CONTAINER
+
+--- snapshots anywhere (must be none)
+default/spike-broker snapshots=0
+default/spike-p3-stage snapshots=0
+default/spike-probe snapshots=0
+default/spire-agent snapshots=0
+default/spire-server snapshots=0
+spike-spiffe/spike-authz-probe snapshots=0
+spike-spiffe/spike-guest-a snapshots=0
+spike-spiffe/spike-guest-b snapshots=0
+
+--- guests A and B: still RUNNING, UUIDs unchanged
+spike-guest-a | name=spike-guest-a project=spike-spiffe type=virtual-machine status=Running location=none created_at=2026-08-17T03:18:09.069463101Z uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=c32efc7b-f3d8-4637-9818-f8906c35543a base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+spike-guest-b | name=spike-guest-b project=spike-spiffe type=virtual-machine status=Running location=none created_at=2026-08-17T03:18:12.983174923Z uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+
+--- guest A's SPIRE agent process (owned by another P10 unit; observed read-only, not touched by this unit)
+2872 spire-agent run -config /run/spike-p9/agent.conf
+
+--- host security / TPM state (read-only)
+{
+  "tpm_status": null,
+  "system_state_is_trusted": null,
+  "encrypted_volumes": null
+}
+
+--- broker service still healthy and unmodified
+active
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+
+--- host security / TPM state (read-only; ONLY the non-secret fields are extracted —
+    /os/1.0/system/security also returns encryption recovery keys, which are NEVER written to evidence)
+$ incus query ovh-incusos:/os/1.0/system/security | jq '{tpm_status:.state.tpm_status, system_state_is_trusted:.state.system_state_is_trusted, encrypted_volumes:.state.encrypted_volumes}'
+{
+  "tpm_status": "ok",
+  "system_state_is_trusted": true,
+  "encrypted_volumes": [
+    {
+      "state": "unlocked (TPM)",
+      "volume": "root"
+    },
+    {
+      "state": "unlocked (TPM)",
+      "volume": "swap"
+    }
+  ]
+}
+$ incus query ovh-incusos:/os/1.0/system/security | jq -r '.state | keys | join(", ")'
+drive_recovery_keys, encrypted_volumes, encryption_recovery_keys_retrieved, pool_recovery_keys, secure_boot_certificates, secure_boot_enabled, system_state_is_trusted, system_state_status, tpm_status
+
+--- host uptime (no reboot was performed by this unit)
+Error: cannot index ["/os/1.0/system/kernel","/os/1.0/system/logging","/os/1.0/system/network","/os/1.0/system/provider","/os/1.0/system/resources","/os/1.0/system/security","/os/1.0/system/storage","/os/1.0/system/update"] with "state"
+
+==========================================================================
+### Closing verification for this unit (cases 8 and 9), after all cleanup
+2026-08-17T17:13:47Z
+
+$ incus project list ovh-incusos: --format csv -c n      (no spike-p10-mig-* project remains)
+default (current)
+spike-spiffe
+$ incus list ovh-incusos: --all-projects --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+$ throwaway names must all 404:
+  spike-p10-c9-recycle in spike-spiffe -> Error: Failed to fetch instance "spike-p10-c9-recycle" in project "spike-spiffe": Instance not found
+  p10-mig1 in spike-p10-mig-b -> Error: Project not found
+  p10-mig1-imported in spike-p10-mig-b -> Error: Project not found
+$ throwaway UUIDs must resolve to zero instances:
+  88013ade-522b-461c-8617-5e8dee9d0c9e -> 0 match(es)
+  3bfe33a9-3b7f-42d8-9d8a-70d3cd754183 -> 0 match(es)
+  8b7a4ddc-c218-4c48-a79b-fe1f377e8734 -> 0 match(es)
+
+$ spire-server entry show | head -1   /   agent list | head -1
+Found 2 entries
+
+$ throwaway entry IDs must be gone:
+  88de86e3-747f-4b67-b26a-0b3b62bf57ef -> Error: error fetching entry ID 88de86e3-747f-4b67-b26a-0b3b62bf57ef: rpc error: code = NotFound desc = entry not found 
+  346e448d-0013-4a2d-b6d6-aee4134f2329 -> Error: error fetching entry ID 346e448d-0013-4a2d-b6d6-aee4134f2329: rpc error: code = NotFound desc = entry not found 
+
+$ guests A and B still RUNNING with unchanged UUIDs:
+  spike-guest-a | name=spike-guest-a project=spike-spiffe type=virtual-machine status=Running location=none created_at=2026-08-17T03:18:09.069463101Z uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=c32efc7b-f3d8-4637-9818-f8906c35543a base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  spike-guest-b | name=spike-guest-b project=spike-spiffe type=virtual-machine status=Running location=none created_at=2026-08-17T03:18:12.983174923Z uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 base_image=9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+
+$ host TPM / trust (non-secret fields only):
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"system_state_status":"system state is fully trusted","encrypted_volumes":["root=unlocked (TPM)","swap=unlocked (TPM)"]}
+
+$ broker binary digest unchanged, service active:
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+active
+
+Not done by this unit, by contract: no host reboot, no spire-agent/spire-server container restart,
+no snapshot or restore of any instance, no tpm2_* command, no /dev/tpmrm0 access, no incus admin os
+mutation, no change to /state/broker.env or any broker flag, no git command, no repo-worktree edit.

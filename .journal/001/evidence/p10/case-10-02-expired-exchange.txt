@@ -1,0 +1,190 @@
+### Case 10 — step 2: EXPIRED EXCHANGE SVID (P10 case 10, stale state 2 of 3)
+Unit: P10StaleLifecycle. Appendix D: the exchange certificate and its private key are NEVER
+written to this file. Only timestamps, serials, SPIFFE IDs, file modes and verbatim errors are.
+The exchange material lives only in the guest tmpfs at /run/spike-exchange, mode 0600.
+
+--- 2a. teardown of the healthy state, so that ONLY the expired certificate can produce a node ---
+now=2026-08-17T17:49:35Z
+$ guest A agent before: 2872 spire-agent run -config /run/spike-p9/agent.conf
+$ kill the guest agent (guest-local process; the HOST spire-agent/spire-server containers are NOT touched)
+guest spire-agent: not running
+$ evict the x509pop node so no cached node identity can be mistaken for a new one
+Agent evicted successfully
+$ discard the guest agent data dir (keeps only the PUBLIC bundle.pem)
+total 12
+drwx------  2 root root 4096 Aug 17 17:49 .
+drwxr-xr-x 19 root root 4096 Aug 17 17:03 ..
+-rw-r--r--  1 root root 1539 Aug 17 17:03 bundle.pem
+$ spire-server agent list  (must be the tpm_devid host node only)
+Found 1 attested agent:
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+
+--- 2b. mint a fresh nonce and STAGE the exchange credential without starting the agent ---
+AGENT_START_MODE=none makes the canonical P9 harness deliver and validate the exchange material
+into the tmpfs and render the agent config, but start nothing. EXCHANGE_RETENTION=keep stops it
+shredding the material, because this case must still hold it after it expires.
+now=2026-08-17T17:49:52Z
+mint: HTTP 201
+RESULT mint outcome=minted status=201 nonce_id=61eff6fea40ee2cfd340ec8a5acce2c5 expires_at=2026-08-17T17:59:52.836073634Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+$ incus exec spike-guest-a -- env AGENT_START_MODE=none EXCHANGE_RETENTION=keep ... guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=61eff6fea40ee2cfd340ec8a5acce2c5
+payload: sha256=a81803ca5a6670820853098dc76f69224df199dd7d50da1199a62bc941186380
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=61eff6fea40ee2cfd340ec8a5acce2c5
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:c32efc7b-f3d8-4637-9818-f8906c35543a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+exchange: private key parses and matches the certificate (public-key digests equal)
+exchange: certificate_path=/run/spike-exchange/svid.pem chain_certs=1 (leaf first; x509pop accepts leaf+intermediates in one file)
+exchange: private_key_path=/run/spike-exchange/svid.key mode=0600 (tmpfs only, never written to a persistent guest filesystem)
+exchange: trust_bundle_path=/run/spike-exchange/bundle.pem bundle_certs=2
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a (read from the certificate, which is authoritative)
+exchange: serial=70BD76E2A4C2E6743FAA1E891001A5DC not_before=Aug 17 17:48:56 2026 GMT not_after=Aug 17 17:51:06 2026 GMT
+exchange: response exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_expires_at=2026-08-17T17:51:06Z
+exchange: expected_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: trust bundle persisted to /var/lib/spire-agent/bundle.pem (public material, Appendix D rule 3) so the agent can be restarted
+agent: rendered /run/spike-p9/agent.conf from /root/p9/agent.conf.template
+agent: trust_domain=spike.incus.internal server=10.55.156.67:8081 data_dir=/var/lib/spire-agent
+agent: socket_path=/tmp/spire-agent/public/api.sock key_manager=memory trust_bundle_path=/var/lib/spire-agent/bundle.pem
+agent: spire-agent validate -config accepted the rendered configuration
+agent: AGENT_START_MODE=none — configuration rendered and exchange material delivered, nothing started
+RESULT phase=p9-bootstrap outcome=STAGED nonce_id=61eff6fea40ee2cfd340ec8a5acce2c5 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 17:51:06 2026 GMT conf=/run/spike-p9/agent.conf exchange_retention=keep exchange_material=live_in_tmpfs
+WARNING: the exchange key is LIVE in /run/spike-exchange because nothing was started. It is tmpfs-backed
+WARNING: and dies with the guest, but tmpfs pages can be swapped; destroy it as soon as you are done:
+WARNING:   find /run/spike-exchange -type f -exec shred -u -z -n 1 {} + && umount /run/spike-exchange
+exchange: scratch directory removed (staged payload and nonce gone); the credential files remain
+WARNING: EXCHANGE_RETENTION=keep: the exchange PRIVATE KEY is LIVE in /run/spike-exchange and stays there.
+WARNING: Destroy it by hand when the agent no longer needs it:
+WARNING:   find /run/spike-exchange -type f -exec shred -u -z -n 1 {} + && umount /run/spike-exchange
+HARNESS_EXIT=0
+
+--- 2c. certificate timestamps versus current time, read from the staged certificate ---
+$ incus exec spike-guest-a -- ls -l /run/spike-exchange; openssl x509 -noout -dates -serial -subject on the STAGED cert
+total 12
+-rw------- 1 root root 1539 Aug 17 17:49 bundle.pem
+-rw------- 1 root root  242 Aug 17 17:49 svid.key
+-rw------- 1 root root  864 Aug 17 17:49 svid.pem
+
+serial=70BD76E2A4C2E6743FAA1E891001A5DC
+notBefore=Aug 17 17:48:56 2026 GMT
+notAfter=Aug 17 17:51:06 2026 GMT
+X509v3 Subject Alternative Name: 
+    URI:spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+
+guest_now=2026-08-17T17:51:49Z
+operator_now=2026-08-17T17:51:53Z
+The certificate is now EXPIRED: not_after=Aug 17 17:51:06 2026 GMT, entry TTL 120s
+(entry 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0, X509-SVID TTL 120).
+
+--- 2d. ATTEMPT x509pop node attestation with the EXPIRED exchange certificate ---
+attempt_at=2026-08-17T17:51:59Z
+$ incus exec spike-guest-a -- timeout 45 spire-agent run -config /run/spike-p9/agent.conf
+verbatim agent output (no credential material appears in it):
+time="2026-08-17T17:51:55Z" level=warning msg="Current umask 0022 is too permissive; setting umask 0027"
+time="2026-08-17T17:51:55Z" level=info msg="Starting agent" data_dir=/var/lib/spire-agent version=1.15.2
+time="2026-08-17T17:51:55Z" level=info msg="Configured plugin" external=false plugin_name=x509pop plugin_type=NodeAttestor reconfigurable=false subsystem_name=catalog
+time="2026-08-17T17:51:55Z" level=info msg="Plugin loaded" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T17:51:55Z" level=info msg="Plugin loaded" external=false plugin_name=memory plugin_type=KeyManager subsystem_name=catalog
+time="2026-08-17T17:51:55Z" level=info msg="Configured plugin" external=false plugin_name=unix plugin_type=WorkloadAttestor reconfigurable=false subsystem_name=catalog
+time="2026-08-17T17:51:55Z" level=info msg="Plugin loaded" external=false plugin_name=unix plugin_type=WorkloadAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=info msg="Bundle loaded" subsystem_name=attestor trust_domain_id="spiffe://spike.incus.internal"
+time="2026-08-17T17:51:56Z" level=debug msg="No pre-existing agent SVID found. Will perform node attestation" subsystem_name=attestor
+time="2026-08-17T17:51:56Z" level=info msg="SVID is not found. Starting node attestation" subsystem_name=attestor trust_domain_id="spiffe://spike.incus.internal"
+time="2026-08-17T17:51:56Z" level=debug msg="Closing catalog" subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=debug msg="Unloading plugin" external=false plugin_name=unix plugin_type=WorkloadAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=debug msg="Plugin deinitialized" external=false plugin_name=unix plugin_type=WorkloadAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=info msg="Plugin unloaded" external=false plugin_name=unix plugin_type=WorkloadAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=debug msg="Unloading plugin" external=false plugin_name=memory plugin_type=KeyManager subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=debug msg="Plugin deinitialized" external=false plugin_name=memory plugin_type=KeyManager subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=info msg="Plugin unloaded" external=false plugin_name=memory plugin_type=KeyManager subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=debug msg="Unloading plugin" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=debug msg="Plugin deinitialized" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=info msg="Plugin unloaded" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=info msg="Catalog closed" subsystem_name=catalog
+time="2026-08-17T17:51:56Z" level=error msg="Agent crashed" error="failed to receive attestation response: rpc error: code = PermissionDenied desc = nodeattestor(x509pop): certificate verification failed: x509: certificate has expired or is not yet valid: current time 2026-08-17T17:52:00Z is after 2026-08-17T17:51:06Z"
+AGENT_EXIT=1
+finished_at=2026-08-17T17:52:00Z
+
+--- 2e. SERVER-side view of the same rejection (spire-server console log, read-only) ---
+$ incus console spire-server --show-log | grep -i "x509pop\|AttestAgent" | tail -8
+[36mINFO[0m[69138] Agent deleted                                 [36mauthorized_as[0m=local [36mauthorized_via[0m=transport [36mmethod[0m=DeleteAgent [36mrequest_id[0m=7001590f-4615-46e9-8f52-c3e75c83635d [36mservice[0m=agent.v1.Agent [36mspiffe_id[0m="spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a" [36msubsystem_name[0m=api
+[31mERRO[0m[69279] Nodeattestor(x509pop): certificate verification failed: x509: certificate has expired or is not yet valid: current time 2026-08-17T17:52:00Z is after 2026-08-17T17:51:06Z  [31mauthorized_as[0m=nobody [31mauthorized_via[0m= [31mcaller_addr[0m="10.55.156.150:57268" [31mmethod[0m=AttestAgent [31mnode_attestor_type[0m=x509pop [31mrequest_id[0m=08b9fb7d-81cb-4730-b829-2de4bf280bf3 [31mservice[0m=agent.v1.Agent [31msubsystem_name[0m=api
+
+--- 2f. no node identity was issued from the expired material ---
+$ spire-server agent list
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 18:41:53 +0000 UTC
+Serial number     : 110372763475192610648223717709953085556
+Can re-attest     : true
+Agent version     : 1.15.2
+
+$ spire-server agent show -spiffeID .../x509pop/incus/a955ca30-...
+Error: rpc error: code = NotFound desc = agent not found
+$ guest A: no agent process, no Workload API socket
+no spire-agent process
+total 8
+-rw------- 1 root root  146 Aug 17 17:51 agent-data.json
+-rw-r--r-- 1 root root 1539 Aug 17 17:49 bundle.pem
+
+--- 2g. cleanup: destroy the retained (now expired) exchange material ---
+now=2026-08-17T17:52:34Z
+mount check:
+still a mount point? no
+directory contents:
+total 0
+drwx------  2 root root  40 Aug 17 15:40 .
+drwxr-xr-x 23 root root 520 Aug 17 17:04 ..
+svid.key / svid.pem anywhere on this guest:
+0
+files containing a PRIVATE KEY block under /run and /var/lib:
+3
+
+--- 2h. verdict for stale state 2 ---
+PASS. An EXPIRED exchange SVID attests nothing and yields no node identity.
+  exchange entry TTL      : 120s (entry 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0)
+  exchange serial         : 70BD76E2A4C2E6743FAA1E891001A5DC
+  exchange SPIFFE ID      : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+  not_before / not_after  : Aug 17 17:48:56 2026 GMT / Aug 17 17:51:06 2026 GMT
+  exchange_expires_at     : 2026-08-17T17:51:06Z (broker response field, matches the leaf)
+  attestation attempted at: 2026-08-17T17:52:00Z, i.e. 54s after not_after
+  agent, verbatim         : failed to receive attestation response: rpc error: code = PermissionDenied
+                            desc = nodeattestor(x509pop): certificate verification failed: x509:
+                            certificate has expired or is not yet valid: current time
+                            2026-08-17T17:52:00Z is after 2026-08-17T17:51:06Z
+  server, verbatim        : ERRO Nodeattestor(x509pop): certificate verification failed: x509:
+                            certificate has expired or is not yet valid ... method=AttestAgent
+                            authorized_as=nobody node_attestor_type=x509pop
+  result                  : agent exited 1 ("Agent crashed"), spire-server lists ONE agent (the
+                            tpm_devid host node), and agent show for the x509pop node ID returns
+                            NotFound. Fail-closed, with no partial state.
+  No certificate and no private key appears in this file; the material was shredded and its
+  tmpfs unmounted, which is overwrite plus unlink, NOT cryptographic erasure.
+
+--- 2i. attribution of the 3 "PRIVATE KEY" hits above (none is exchange material) ---
+$ incus exec spike-guest-a -- grep -rl "PRIVATE KEY" /run /var/lib
+/run/incus_agent/incus-agent
+/run/incus_agent/agent.key
+/var/lib/apt/lists/deb.debian.org_debian_dists_trixie_main_i18n_Translation-en
+  /run/incus_agent/incus-agent  -> the Incus guest agent BINARY (the literal string is compiled in)
+  /run/incus_agent/agent.key    -> the Incus guest agent's own TLS key, present since guest start,
+                                   nothing to do with SPIFFE; it is NOT read or copied by this unit
+  /var/lib/apt/lists/...Translation-en -> an apt package-description index that contains the phrase
+Zero SPIRE exchange keys remain: find for svid.key/svid.pem returned 0 and /run/spike-exchange is
+an empty, unmounted directory.

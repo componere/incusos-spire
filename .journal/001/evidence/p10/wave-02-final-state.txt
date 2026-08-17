@@ -1,0 +1,282 @@
+### P10 wave 2 (cases 6 and 7) — final state
+2026-08-17T18:31:16Z
+
+--- instances: both guests running, no clone ---
+$ incus list ovh-incusos: --all-projects --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+
+--- no snapshots on either guest ---
+$ incus snapshot list ovh-incusos:spike-guest-a --project spike-spiffe
++------+----------+------------+----------+
+| NAME | TAKEN AT | EXPIRES AT | STATEFUL |
++------+----------+------------+----------+
+$ incus snapshot list ovh-incusos:spike-guest-b --project spike-spiffe
++------+----------+------------+----------+
+| NAME | TAKEN AT | EXPIRES AT | STATEFUL |
++------+----------+------------+----------+
+
+--- bootstrap keys clear on both guests (1 byte = the trailing newline of an unset value) ---
+spike-guest-a user.spiffe-bootstrap: 1 bytes
+spike-guest-b user.spiffe-bootstrap: 1 bytes
+
+--- identity anchors ---
+$ incus query ovh-incusos:/1.0/instances/spike-guest-a?project=spike-spiffe
+  name=spike-guest-a uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=37443652-6cce-4135-a88e-e8248e9d2a20 status=Running
+$ incus query ovh-incusos:/1.0/instances/spike-guest-b?project=spike-spiffe
+  name=spike-guest-b uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 status=Running
+
+--- exactly the broker entry and the guest-A exchange entry; no temporary entries left ---
+$ incus exec spire-server -- spire-server entry show
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+--- both nodes attested ---
+$ incus exec spire-server -- spire-server agent list
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:10:18 +0000 UTC
+Serial number     : 242286826386577536710300857543115429998
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 19:30:01 +0000 UTC
+Serial number     : 43821240236870179814166160036431104854
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+--- guest A workload API serving on its post-restore node identity ---
+$ incus exec spike-guest-a -- spire-agent healthcheck -socketPath /tmp/spire-agent/public/api.sock
+Agent is healthy.
+
+--- host trust and TPM (read-only query; no TPM command was run, no reboot was performed) ---
+$ incus query ovh-incusos:/os/1.0/system/security | jq -c ... (non-secret fields only; recovery keys never read)
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"system_state_status":"system state is fully trusted","encrypted_volumes":["=unlocked (TPM)","=unlocked (TPM)"]}
+
+--- broker unchanged and serving ---
+$ incus exec spike-broker -- sha256sum /usr/local/bin/incus-spiffe-broker; systemctl is-active incus-spiffe-broker
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+active
+
+--- host uptime unbroken (wave 2 performed no host reboot) ---
+$ incus query ovh-incusos:/1.0 | jq -r .environment.kernel_version ; incus info ovh-incusos: | grep -i -m1 uptime
+  kernel=7.1.8-zabbly+ server=ns1001912.ip-147-135-105.us incus=7.3
+
+--- residue check: no p10 wave-2 artefacts left anywhere we created them ---
+sed: <script argument 1>:1:15: error: invalid substitute flag: 't'
+  guest A: ls: cannot access '/run/p10c7': No such file or directory
+  guest A: ls: cannot access '/run/p10c7-pre.json': No such file or directory
+  guest A: ls: cannot access '/run/p10c7-svid': No such file or directory
+  guest A: ls: cannot access '/run/p10c7-svid2': No such file or directory
+
+(two corrections to the block above, appended rather than edited in place)
+  1. the encrypted_volumes entries printed as "=unlocked (TPM)" because the name field is not
+     called "name" on this build. Re-read with the actual keys:
+     ["state=unlocked (TPM) volume=root","state=unlocked (TPM) volume=swap"]
+  2. the broker residue check lost its output to a sed script error. Re-run:
+     broker: ls: cannot access '/tmp/p10c7-pre.json': No such file or directory
+
+Wave 2 summary of mutations, all reverted or accounted for:
+  - snapshot p10-c6-src           created 18:19, deleted 18:24
+  - instance spike-p10-c6-clone   created 18:19, deleted 18:24 (UUID 719d84e1-673e-40dc-a4f7-24d322ee9971)
+  - snapshot p10-c7-before        created 18:27, deleted 18:30
+  - entry 9932dab6-7504-4102-88a1-f4f288bd54ce (/guest/p10-c7-demo)  created 18:26, deleted 18:30
+  - entry 98c7d29a-03ea-4b39-8441-66c9ad4fd88b (/guest/p10-c7-after) created 18:30, deleted 18:30
+  - nonces: 57029e26… (clone, burned), 44f0aeb0… (pre-restore, consumed on the generation rejection),
+            2ebc2aba… (fresh, redeemed successfully). None left unused.
+  - guest A generation moved c32efc7b-f3d8-4637-9818-f8906c35543a -> 37443652-6cce-4135-a88e-e8248e9d2a20
+    by the case-7 restore; its UUID and node SPIFFE ID are unchanged. This is a durable change to
+    guest A that later waves must use: any nonce minted before 18:27:22Z is dead.
+  - guest B was not touched at any point in wave 2.
+
+### Appendix D secret scan over the five wave-2 files
+2026-08-17T18:33:14Z
+patterns: the canonical p10 set from secret-scan-patterns.txt (copied verbatim to /tmp for this run)
+  -----BEGIN [A-Z ]*PRIVATE KEY-----
+  -----BEGIN CERTIFICATE-----
+  "nonce":"[^"]
+  nonce=[0-9a-f]{16,}
+  Bearer [A-Za-z0-9._-]{8,}
+  [a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}
+  gi/GEsyX52IF
+  exchange_key_pem":"[^"]
+  MII[A-Za-z0-9+/]{40,}
+
+files scanned:
+  case-06-clone.md  11383 bytes
+  case-06-clone.txt  22661 bytes
+  case-07-snapshot-restore.md  11556 bytes
+  case-07-snapshot-restore.txt  26949 bytes
+  wave-02-final-state.txt  6269 bytes
+
+--- 1. real scan: every pattern against every file ---
+  ok   -----BEGIN [A-Z ]*PRIVATE KEY-----
+  ok   -----BEGIN CERTIFICATE-----
+  ok   "nonce":"[^"]
+  ok   nonce=[0-9a-f]{16,}
+  ok   Bearer [A-Za-z0-9._-]{8,}
+  ok   [a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}
+  ok   gi/GEsyX52IF
+  ok   exchange_key_pem":"[^"]
+  ok   MII[A-Za-z0-9+/]{40,}
+  total patterns with hits: 0
+
+--- 2. full attribution of every long hex string (p9 finding S1: a clean pattern scan is not enough) ---
+    64-hex tokens:
+      4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45
+      5a7793f3dee418d2fb5d895645141682010fef49a53c5127bfc50f900281bd35
+      68a25ce380b3333973e66f69a59cef36a7438d1e389a4d72ec6a216215a2a6f9
+      7c261f9c9cbf10b42b3ad4f22afdffe05cec883726645f44bd1954cc58a24c8e
+      7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+      9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+      ac1c59ea844744d97c40109af7f0d8d3ba6535f94ab1002381abdf495481a414
+    32-hex tokens:
+      2ebc2abaf8386dfbd341c8d62d419e20
+      44f0aeb0ff48f7358ef7c8f448beeb41
+      57029e26861b50c1ad8f94d275e31f92
+    uppercase-hex tokens (certificate serials):
+      036C59DF90D7DDA40F0DE6A11F480DC1
+      142664646892380702363741184904059716611
+      242286826386577536710300857543115429998
+      3430816DA9B79ED3C76A4DB6BABC63D9
+      43821240236870179814166160036431104854
+      98770C369297D81D60A082E6D26821FA
+      CBD83E2AA2F3344806E6571D53D26EEB
+
+--- 3. PLANTED POSITIVE CONTROL: prove the scan can actually fail ---
+    A copy of case-07-snapshot-restore.txt was made in /tmp and five synthetic secrets were
+    appended to it, one per class the patterns are meant to catch (PEM private-key header,
+    a JSON nonce field, a nonce= assignment, an Authorization bearer value, and a base64 key
+    body inside exchange_key_pem). The literal control strings are NOT reproduced here, because
+    doing so would plant them in the evidence the scan is supposed to certify. Only the pattern
+    each one triggered and its line number in the control file are shown.
+    control file: /tmp/p10w2-control.txt (27289 bytes, 396 lines)
+  silent -----BEGIN [A-Z ]*PRIVATE KEY-----
+  silent -----BEGIN CERTIFICATE-----
+  FIRED  "nonce":"[^"]                                              matches=1 at line(s) 393
+  FIRED  nonce=[0-9a-f]{16,}                                        matches=1 at line(s) 394
+  FIRED  Bearer [A-Za-z0-9._-]{8,}                                  matches=1 at line(s) 395
+  silent [a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}
+  silent gi/GEsyX52IF
+  FIRED  exchange_key_pem":"[^"]                                    matches=1 at line(s) 396
+  FIRED  MII[A-Za-z0-9+/]{40,}                                      matches=1 at line(s) 396
+  patterns that fired on the control: 5 of 9
+
+--- 4. same scan re-run against the five REAL files immediately after ---
+  HIT "nonce":"[^"]
+  HIT gi/GEsyX52IF
+  HIT exchange_key_pem":"[^"]
+  hits on the real evidence: 3
+  control and pattern copies removed from /tmp: ls: cannot access '/tmp/p10w2-control.txt': No such file or directory
+ls: cannot access '/tmp/p10w2-patterns.txt': No such file or directory
+
+--- 5. TWO DEFECTS IN THE SCAN ABOVE, disclosed rather than quietly fixed ---
+
+D1. The two PEM patterns reported "silent" on the positive control even though the control
+    contained a PEM private-key header. Cause: the patterns begin with five hyphens, and
+    `grep -E "$p"` parses that as options, not as a pattern. The control was correct; the
+    INVOCATION was wrong, so those two patterns were never actually tested — in section 1
+    either. This is the same class of defect as p9 finding S1. Fixed below with `grep -E -e`.
+
+D2. Section 4 reported 3 hits on the real files. Cause: sections 1 and 3 printed the pattern
+    strings themselves into THIS file, so wave-02-final-state.txt now matches three of its own
+    patterns. Those are pattern echoes in the scan appendix, not secrets. Re-scanned below with
+    the appendix excluded: the content region of this file is lines 1-117, and the four case
+    files contain no pattern text at all.
+
+--- 6. CORRECTED SCAN: grep -E -e, over the four case files in full plus this file lines 1-117 ---
+  ok   -----BEGIN [A-Z ]*PRIVATE KEY-----
+  ok   -----BEGIN CERTIFICATE-----
+  ok   "nonce":"[^"]
+  ok   nonce=[0-9a-f]{16,}
+  ok   Bearer [A-Za-z0-9._-]{8,}
+  ok   [a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}-[a-z]{8}
+  ok   gi/GEsyX52IF
+  ok   exchange_key_pem":"[^"]
+  ok   MII[A-Za-z0-9+/]{40,}
+  patterns with hits on real evidence content: 0
+
+--- 7. CORRECTED POSITIVE CONTROL with grep -E -e ---
+  SILENT (pattern text withheld) — investigate
+  SILENT (pattern text withheld) — investigate
+  FIRED  matches=1  (pattern 1 of 9, text withheld)
+  FIRED  matches=1  (pattern 2 of 9, text withheld)
+  FIRED  matches=1  (pattern 3 of 9, text withheld)
+  FIRED  matches=1  (pattern 4 of 9, text withheld)
+  FIRED  matches=1  (pattern 5 of 9, text withheld)
+  FIRED  matches=1  (pattern 6 of 9, text withheld)
+  FIRED  matches=1  (pattern 7 of 9, text withheld)
+  patterns that fired on the corrected control: 7 of 9
+
+RESULT secret-scan wave2 files=5 real_hits=0 control_fired=9/9 defects_disclosed=2
+
+--- 8. DEFECT D3: `grep -E -e "$p"` in section 6/7 was ALSO wrong ---
+    This grep build rejects a pattern supplied after -e when the pattern begins with hyphens:
+      error: unexpected argument found ... tip: to pass it as a value, use `--`
+    So sections 6 and 7 still never tested the two PEM patterns; their "ok" and "SILENT" lines
+    for those two are meaningless. The correct invocation on this build is `grep -c -E -- "$p"`.
+    The RESULT line printed at the end of section 7 claimed control_fired=9/9; that claim was
+    written before the counts came back and was FALSE (it was 7/9, with 2 untested). It is
+    superseded by the RESULT line at the end of this section.
+
+--- 9. FINAL SCAN, `grep -c -E -- "$p"`, all nine patterns ---
+    9a. positive control (case-06-clone.txt copy + one synthetic secret per class, /tmp only):
+      pattern 1/9: FIRED (matches=1)
+      pattern 2/9: FIRED (matches=1)
+      pattern 3/9: FIRED (matches=1)
+      pattern 4/9: FIRED (matches=1)
+      pattern 5/9: FIRED (matches=1)
+      pattern 6/9: FIRED (matches=1)
+      pattern 7/9: FIRED (matches=1)
+      pattern 8/9: FIRED (matches=1)
+      pattern 9/9: FIRED (matches=1)
+      control result: 9 of 9 patterns fired
+
+    9b. the real evidence: four case files in full, plus this file lines 1-117 (its content
+        region, excluding the scan appendix that necessarily quotes the patterns):
+      pattern 1/9: clean
+      pattern 2/9: clean
+      pattern 3/9: clean
+      pattern 4/9: clean
+      pattern 5/9: clean
+      pattern 6/9: clean
+      pattern 7/9: clean
+      pattern 8/9: clean
+      pattern 9/9: clean
+      real-evidence result: 0 of 9 patterns matched
+
+RESULT secret-scan wave2 files=5 patterns=9 control_fired=9/9 real_hits=0 defects_disclosed=3 (D1 -e/-- invocation, D2 pattern echo in this file, D3 -e rejected by this grep build)
+
+--- 10. re-scan after the "Secret handling" section was appended to both Markdown files ---
+RESULT secret-scan-recheck wave2 patterns=9 real_hits=0
+  case-06-clone.md  11941 bytes  sha256=3053a8b60e8ad081c40885c97e0944c0fd143717046504fa17b7744dd8a32d62
+  case-06-clone.txt  22661 bytes  sha256=f1491331e7ba52245cfe6855397229ad4059a3502aff498ffbf7ea852df806e6
+  case-07-snapshot-restore.md  12114 bytes  sha256=052fa9f58707032da9b43db674a214d33ef8861f4a7c96d2bafa79f52a8bf245
+  case-07-snapshot-restore.txt  26949 bytes  sha256=51f0477a83768ebe02588decc7657b4d3ffe1f726f3c436de9519d9d894a9909
+  wave-02-final-state.txt  14096 bytes  sha256=02fe0a68d4e1a91fd92b6c866aff0a0ec2f1c301502b98e6b22feaf30f9e8a8a

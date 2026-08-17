@@ -1,0 +1,54 @@
+### case-05-03 — actions 5 and 6 (Q3: deliberate transfer of A's still-unused value)
+### 2026-08-17T18:10:24Z
+
+This is the DELIBERATE bearer-theft subcase the plan requires to be measured,
+not the accidental one. A's value (nonce_id=d674d58ac0450aa9bbe3242daf9d3188,
+minted in case-05-01, never redeemed) is moved into B on purpose.
+
+--- 5.1 transfer, with no stdout / argv / shell-variable / evidence exposure ---
+$ incus config get spike-guest-a --project spike-spiffe user.spiffe-bootstrap \
+    | incus exec spike-guest-b --project spike-spiffe -- sh -c 'umask 077; cat > /run/p10c5/a-payload.json'
+  landed: -rw------- 268 bytes /run/p10c5/a-payload.json
+  nonce_id in the transferred copy: d674d58ac0450aa9bbe3242daf9d3188
+  transfer_was_deliberate=true
+  the value itself was never printed, never in argv, never in a shell variable;
+  it went operator-stdout -> guest-stdin -> mode-0600 file on the 0700 tmpfs.
+
+--- 6.1 redeem A's transferred value FROM B (raw curl; NO agent is started) ---
+    the successful body is written straight to a 0600 file on the tmpfs and is
+    never printed, never parsed into a variable, and never copied into evidence.
+HTTP_STATUS=200
+authoritative_bound_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+authoritative_bound_instance_name=spike-guest-a
+exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+cert_uri_san=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+cert_serial=FDBE9594B7A37911FBF11A1990FDC3A5
+cert_not_before=Aug 17 18:10:13 2026 GMT
+cert_not_after=Aug 17 18:12:23 2026 GMT
+key_matches_certificate=true
+chain_verifies=true
+no_agent_started: 0
+0 spire-agent processes in this guest
+
+    (the two '0's above are 'pgrep -c spire-agent' printing 0 and its non-zero exit
+     taking the '|| echo 0' branch; a clean restatement follows)
+spire_agent_processes_in_B=0
+B agent state dirs: /var/lib/spire-agent absent, /tmp/spire-agent absent
+
+--- 6.2 node-identity consequence: NOT re-run live here ---
+[INFERENCE from observed P8 + P9 contracts] No second SPIRE agent was started in B,
+so this case does not itself observe B becoming A's node. The consequence follows
+from two already-observed contracts:
+  * P8 observed that possession of an unused nonce, not caller location, controls
+    redemption: B redeemed a transferred A payload and received A's binding
+    (p8 matrix-run1-abdefghi.txt case (i); p8 SECURITY_FINDINGS.md 'Bearer-token risk').
+  * P9 observed that exactly this exchange credential format — leaf with URI SAN
+    spiffe://<td>/spire-exchange/incus/<uuid>, matching unencrypted PKCS#8 key, and
+    the trust bundle — completes x509pop mode="spiffe" and yields the derived node
+    spiffe://<td>/spire/agent/x509pop/incus/<uuid> (p9 chain-03-guest-bootstrap.txt,
+    chain-04-agent-list.txt; p9 SECURITY_FINDINGS.md 'SEC-009 escalated').
+The credential this case actually obtained inside B satisfies P9's input contract on
+every field checked above: correct URI SAN for A, key_matches_certificate=true, and
+chain_verifies=true against the server's own bundle. Composing the two observed
+contracts, a holder in B could complete x509pop as A's node. That composition is an
+inference, not a new live claim, and it is exactly the escalation P9 already recorded.

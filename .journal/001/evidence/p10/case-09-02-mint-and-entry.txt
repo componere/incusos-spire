@@ -1,0 +1,63 @@
+### Case 9 — step 2a: mint a real nonce for the GEN1 instance through the authenticated operator endpoint
+2026-08-17T17:04:12Z
+The operator bearer token is passed through a curl --config file built inside the broker container,
+so it never appears in argv and never in this transcript.
+
+$ curl -sS --cacert /state/tls/spike-root-ca.pem --config <auth> -X POST https://10.55.156.44:8443/v1alpha1/nonce -d @<body>
+HTTP 201
+mint response body (contains no secret by contract; printed in full):
+{"nonce_id":"40b7edc017f09396c8acff9426c44b58","expires_at":"2026-08-17T17:14:12.993972062Z","instance_uuid":"3bfe33a9-3b7f-42d8-9d8a-70d3cd754183","instance_name":"spike-p10-c9-recycle","generation":"3bfe33a9-3b7f-42d8-9d8a-70d3cd754183","project":"spike-spiffe"}
+
+
+### Case 9 — step 2b: capture the GEN1 bootstrap payload for the later stale-nonce replay
+The payload holds the nonce SECRET. It is piped over stdin into a mode-0600 file inside the broker
+container and is never printed, never passed in argv (Appendix D rules 1 and 3).
+
+$ incus config get ... user.spiffe-bootstrap | incus exec spike-broker -- sh -c 'umask 077; cat > /tmp/p10c9-payload.json'
+(exit 0)
+host-side view of the key: field names and length only
+payload field names: broker_fingerprint, broker_url, nonce, nonce_id
+payload length (bytes): 267
+payload nonce_id (public): 40b7edc017f09396c8acff9426c44b58
+broker-container copy, permissions:
+-rw------- 1 root root 268 Aug 17 17:04 /tmp/p10c9-payload.json
+268
+
+### Case 9 — step 2c: create a registration entry for the GEN1 UUID, mirroring the real exchange entry's shape
+2026-08-17T17:04:40Z
+Entry ID                : 88de86e3-747f-4b67-b26a-0b3b62bf57ef
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/3bfe33a9-3b7f-42d8-9d8a-70d3cd754183
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:3bfe33a9-3b7f-42d8-9d8a-70d3cd754183
+
+(exit 0)
+
+$ spire-server entry show  (three entries now: the two pre-existing plus the P10 throwaway)
+Found 3 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 88de86e3-747f-4b67-b26a-0b3b62bf57ef
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/3bfe33a9-3b7f-42d8-9d8a-70d3cd754183
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:3bfe33a9-3b7f-42d8-9d8a-70d3cd754183
+
+Entry ID                : 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+

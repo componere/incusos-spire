@@ -1,0 +1,24 @@
+### Case 9 — step 3: delete the instance and recreate it with the EXACT same name
+2026-08-17T17:05:03Z
+GEN1 immediately before delete | name=spike-p10-c9-recycle project=spike-spiffe type=container status=Running location=none created_at=2026-08-17T17:03:50.766011664Z uuid=3bfe33a9-3b7f-42d8-9d8a-70d3cd754183 generation=3bfe33a9-3b7f-42d8-9d8a-70d3cd754183 base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+$ incus delete ovh-incusos:spike-p10-c9-recycle --force --project spike-spiffe
+(exit 0)
+after delete: LOOKUP FAILED: Error: Failed to fetch instance "spike-p10-c9-recycle" in project "spike-spiffe": Instance not found
+
+$ incus launch docker:debian:trixie ovh-incusos:spike-p10-c9-recycle --project spike-spiffe -c oci.entrypoint='sleep infinity'   (SAME NAME)
+Launching ovh-incusos:spike-p10-c9-recycle
+(exit 0)
+GEN2 after recreate under the same name | name=spike-p10-c9-recycle project=spike-spiffe type=container status=Running location=none created_at=2026-08-17T17:05:06.384978959Z uuid=8b7a4ddc-c218-4c48-a79b-fe1f377e8734 generation=8b7a4ddc-c218-4c48-a79b-fe1f377e8734 base_image=f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16
+
+--- comparison
+GEN1 uuid: 3bfe33a9-3b7f-42d8-9d8a-70d3cd754183   GEN1 generation: 3bfe33a9-3b7f-42d8-9d8a-70d3cd754183
+GEN2 uuid: 8b7a4ddc-c218-4c48-a79b-fe1f377e8734   GEN2 generation: 8b7a4ddc-c218-4c48-a79b-fe1f377e8734
+
+--- does the OLD entry's selector value resolve to anything now?
+$ incus query 'ovh-incusos:/1.0/instances?recursion=1&all-projects=true&filter=config.volatile.uuid eq 3bfe33a9-3b7f-42d8-9d8a-70d3cd754183' | jq length
+0
+$ incus list ovh-incusos: --project spike-spiffe config.volatile.uuid=3bfe33a9-3b7f-42d8-9d8a-70d3cd754183 --format csv -c ns
+(empty above = zero matches; P6 §3 not-found -> no selectors, no SVID)
+
+--- and the recreated instance's bootstrap key: nothing carried over
+user.spiffe-bootstrap length on GEN2: 0 bytes

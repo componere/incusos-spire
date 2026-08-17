@@ -10,3 +10,7 @@ packages:
   github.com/componere/incusos-spire/internal/attestor:
     interfaces:
       InstanceReader:
+  github.com/componere/incusos-spire/internal/nonce:
+    interfaces:
+      Store:
+      BootstrapWriter:

@@ -230,3 +230,86 @@ func TestOperationsHonourCancelledContext(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, record.Used)
 }
+
+func TestListExpiredReturnsOnlyUnredeemedExpiredRecords(t *testing.T) {
+	t.Parallel()
+
+	now := storeNow()
+	store := memory.New()
+
+	// Three shapes matter: a live nonce, an expired one nobody redeemed, and an
+	// expired one that was consumed while it still worked.
+	live := storedRecord()
+	live.ID = "aaaa0000"
+	live.ExpiresAt = now.Add(storeTTL)
+
+	stale := storedRecord()
+	stale.ID = "bbbb1111"
+	stale.ExpiresAt = now.Add(-time.Second)
+
+	staleAndConsumed := storedRecord()
+	staleAndConsumed.ID = "cccc2222"
+	staleAndConsumed.ExpiresAt = now.Add(-time.Hour)
+	staleAndConsumed.Used = true
+
+	boundary := storedRecord()
+	boundary.ID = "dddd3333"
+	boundary.ExpiresAt = now
+
+	for _, record := range []nonce.Record{live, stale, staleAndConsumed, boundary} {
+		require.NoError(t, store.Put(t.Context(), record))
+	}
+
+	expired, err := store.ListExpired(t.Context(), now)
+	require.NoError(t, err)
+
+	// Expiry is inclusive, so the record expiring exactly now is included, and
+	// the sweep only ever sees records whose key may still hold a live secret.
+	require.Equal(t, []nonce.NonceID{stale.ID, boundary.ID}, ids(expired))
+	require.Equal(t, 4, store.Len(), "listing consumes and deletes nothing")
+}
+
+func TestListExpiredIsSortedAndEmptyWithoutError(t *testing.T) {
+	t.Parallel()
+
+	now := storeNow()
+	store := memory.New()
+
+	for _, id := range []nonce.NonceID{"cccc", "aaaa", "bbbb"} {
+		record := storedRecord()
+		record.ID = id
+		record.ExpiresAt = now.Add(-time.Minute)
+		require.NoError(t, store.Put(t.Context(), record))
+	}
+
+	expired, err := store.ListExpired(t.Context(), now)
+	require.NoError(t, err)
+	require.Equal(t, []nonce.NonceID{"aaaa", "bbbb", "cccc"}, ids(expired),
+		"a reproducible sweep order keeps the evidence of two runs comparable")
+
+	// An empty store is a normal answer, not a missing-nonce failure.
+	empty, err := memory.New().ListExpired(t.Context(), now)
+	require.NoError(t, err)
+	require.Empty(t, empty)
+}
+
+func TestListExpiredRefusesACancelledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := filledStore(t).ListExpired(ctx, storeNow())
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+// ids reduces records to their identifiers, which is what the sweep assertions
+// compare.
+func ids(records []nonce.Record) []nonce.NonceID {
+	collected := make([]nonce.NonceID, 0, len(records))
+	for _, record := range records {
+		collected = append(collected, record.ID)
+	}
+
+	return collected
+}

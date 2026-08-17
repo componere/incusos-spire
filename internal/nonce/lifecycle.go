@@ -24,6 +24,10 @@ const (
 	// idBytes is the length in bytes of a generated [NonceID] before hex
 	// encoding. The ID is a public correlation handle, not a secret.
 	idBytes = 16
+	// compensationTimeout bounds the detached cleanup of a mint that failed.
+	// The work is one store delete, so the bound only has to survive a slow
+	// backend, not a caller.
+	compensationTimeout = 5 * time.Second
 )
 
 // Payload is the JSON document written to the guest-readable bootstrap
@@ -122,6 +126,36 @@ func WithTTL(ttl time.Duration) Option {
 		}
 
 		minter.ttl = ttl
+	}
+}
+
+// MintOption adjusts a single [Minter.Mint] call without changing the minter's
+// policy for any other call.
+//
+// It exists because the lifetime of one nonce is a per-issuance decision: an
+// operator provisioning a guest that boots in five seconds should be able to
+// ask for a five-second window instead of the process default. The caller that
+// accepts such a request is responsible for bounding it; this package only
+// applies what it is given and refuses the impossible.
+type MintOption func(*mintPolicy)
+
+// mintPolicy is the resolved per-call policy of one mint. It starts as a copy
+// of the minter's own policy, so an absent option changes nothing.
+type mintPolicy struct {
+	// ttl is the lifetime this mint applies.
+	ttl time.Duration
+}
+
+// WithMintTTL sets the lifetime of the nonce this call issues. A non-positive
+// duration is ignored, so a miscomputed value cannot mint a nonce that is
+// already expired.
+func WithMintTTL(ttl time.Duration) MintOption {
+	return func(policy *mintPolicy) {
+		if ttl <= 0 {
+			return
+		}
+
+		policy.ttl = ttl
 	}
 }
 
@@ -233,7 +267,9 @@ func NewMinter(store Store, writer BootstrapWriter, opts ...Option) *Minter {
 // payload written second, so a crash between the two leaves an unusable record
 // and no readable secret; the reverse order could leave a readable secret that
 // no store can consume or revoke. When the write fails, the record is deleted
-// again and the returned error wraps [ErrWriterUnavailable].
+// again and the returned error wraps [ErrWriterUnavailable]. That cleanup runs
+// on a context detached from ctx, so a caller that has already gone away cannot
+// leave a redeemable record behind.
 //
 // name is the write address only, because the bootstrap-writer credential is
 // denied reads and cannot resolve a UUID itself. The caller MUST have
@@ -245,9 +281,19 @@ func (m *Minter) Mint(
 	name attestor.InstanceName,
 	uuid attestor.InstanceUUID,
 	generation attestor.GenerationUUID,
+	opts ...MintOption,
 ) (Issued, error) {
 	if name == "" || uuid == "" || generation == "" {
 		return Issued{}, errors.New("nonce: mint requires an instance name, uuid, and generation")
+	}
+
+	policy := mintPolicy{ttl: m.ttl}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+
+		opt(&policy)
 	}
 
 	id, err := m.newID()
@@ -266,7 +312,7 @@ func (m *Minter) Mint(
 		Instance:   uuid,
 		Generation: generation,
 		Project:    project,
-		ExpiresAt:  m.now().Add(m.ttl),
+		ExpiresAt:  m.now().Add(policy.ttl),
 		Used:       false,
 	}
 	if putErr := m.store.Put(ctx, record); putErr != nil {
@@ -356,15 +402,107 @@ func (m *Minter) Clear(ctx context.Context, project attestor.ProjectName, name a
 	return nil
 }
 
+// Revoke withdraws a nonce nobody redeemed: it clears the guest-readable
+// bootstrap key and then deletes the record.
+//
+// The order is the mirror image of [Minter.Mint]. The key is cleared first and
+// the record dropped second, so a failed clear leaves the record in place and
+// with it the handle a caller needs to try again. Deleting first would strand a
+// readable secret in the instance configuration with nothing left to name it.
+//
+// A record that was consumed before this call is left completely untouched and
+// reported as [ErrNonceAlreadyUsed]. The redemption path owns the clear for a
+// consumed nonce, and this method must never race it. That check is what makes
+// a periodic sweep safe: a [Store] serialises [Store.ConsumeOnce] against
+// [Store.Get], so a redemption that committed before expiry is always visible
+// here, and a redemption cannot commit after expiry at all.
+//
+// As with [Minter.Mint], name must have been re-resolved from the instance UUID
+// immediately beforehand.
+func (m *Minter) Revoke(
+	ctx context.Context,
+	id NonceID,
+	project attestor.ProjectName,
+	name attestor.InstanceName,
+) error {
+	if err := m.requireUnredeemed(ctx, id); err != nil {
+		return err
+	}
+
+	if err := m.writer.ClearBootstrap(ctx, project, name); err != nil {
+		return fmt.Errorf("%w: clear bootstrap on %s: %w", ErrWriterUnavailable, name, err)
+	}
+
+	if err := m.store.Delete(ctx, id); err != nil {
+		return fmt.Errorf("%w: delete nonce %s: %w", ErrStoreUnavailable, id, err)
+	}
+
+	return nil
+}
+
+// Discard drops the record of an unredeemed nonce without touching any instance
+// configuration. It is the withdrawal for a nonce whose instance no longer
+// exists: the configuration key went away with the instance, so there is
+// nothing to clear and retrying a clear forever would be the only alternative.
+//
+// Like [Minter.Revoke] it refuses a consumed record, so a redemption that
+// committed just before expiry keeps the record that lets a replay be refused
+// as already used.
+func (m *Minter) Discard(ctx context.Context, id NonceID) error {
+	if err := m.requireUnredeemed(ctx, id); err != nil {
+		return err
+	}
+
+	if err := m.store.Delete(ctx, id); err != nil {
+		return fmt.Errorf("%w: delete nonce %s: %w", ErrStoreUnavailable, id, err)
+	}
+
+	return nil
+}
+
 // abandon removes a record whose bootstrap write never landed, so a nonce that
 // no guest can read does not stay redeemable. A failed cleanup is joined onto
 // cause instead of replacing it.
+//
+// The delete runs on a context detached from the caller's and bounded by
+// [compensationTimeout]. The caller is on its way out by definition here, and a
+// cancelled context is exactly how a live record survives a failed mint: a
+// [Store] refuses to act on a cancelled context, so reusing ctx would leave a
+// redeemable nonce behind whenever the operator hung up first.
 func (m *Minter) abandon(ctx context.Context, id NonceID, cause error) error {
-	if err := m.store.Delete(ctx, id); err != nil {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), compensationTimeout)
+	defer cancel()
+
+	if err := m.store.Delete(cleanup, id); err != nil {
 		return errors.Join(cause, fmt.Errorf("%w: delete nonce %s: %w", ErrStoreUnavailable, id, err))
 	}
 
 	return cause
+}
+
+// requireUnredeemed reports whether id still names a nonce that may be
+// withdrawn: it must exist and it must not have been consumed. It is the shared
+// precondition of [Minter.Revoke] and [Minter.Discard], and the reason a sweep
+// cannot clear a key out from under a redemption that committed first.
+func (m *Minter) requireUnredeemed(ctx context.Context, id NonceID) error {
+	if id == "" {
+		return fmt.Errorf("%w: empty nonce id", ErrNonceNotFound)
+	}
+
+	record, err := m.store.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrNonceNotFound) {
+			return fmt.Errorf("nonce: withdraw nonce %s: %w", id, err)
+		}
+
+		return fmt.Errorf("%w: look up nonce %s: %w", ErrStoreUnavailable, id, err)
+	}
+
+	if record.Used {
+		return fmt.Errorf("%w: nonce %s was redeemed before withdrawal", ErrNonceAlreadyUsed, id)
+	}
+
+	return nil
 }
 
 // classifyConsume separates a lifecycle answer from a backend fault. A store

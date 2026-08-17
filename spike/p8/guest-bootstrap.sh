@@ -62,7 +62,12 @@
 # EXIT CODES (lifecycle-matrix.sh judges on these plus the final RESULT line)
 # ---------------------------------------------------------------------------
 #   0   success: redemption granted, or fetch completed
-#   2   usage or missing dependency
+#   2   usage: a bad MODE, an unexpected argument, an unreadable file
+#   6   a required binary is missing inside the guest. It is deliberately
+#       distinct from a usage error and from a socket failure: a missing curl,
+#       jq or openssl means the case never ran, and lifecycle-matrix.sh must
+#       record that as ERROR rather than as a security verdict. The same fact
+#       is emitted as RESULT ... reason=missing_dependency.
 #   3   guest socket read failed (key absent, forbidden, or socket missing)
 #   4   payload present but malformed or missing a required field
 #   5   TLS pin failure: the broker certificate does not match the fingerprint
@@ -146,8 +151,14 @@ cleanup() {
 	return 0
 }
 
+# require_tool exits 6, not 2, when a binary is absent, and says so on a RESULT
+# line. The P8 live run lost case e to a guest with no jq and could only see
+# "exit 2", which reads like a harness bug; lifecycle-matrix.sh needs to tell a
+# missing dependency apart from a security outcome so it can record ERROR.
 require_tool() {
-	command -v "$1" >/dev/null 2>&1 || die 2 "$2 not found: $1 (override with $3)"
+	command -v "$1" >/dev/null 2>&1 && return 0
+	log "RESULT mode=$MODE outcome=error status=- nonce_id=- reason=missing_dependency dependency=$1"
+	die 6 "$2 not found inside this guest: $1 (install it, or override with $3)"
 }
 
 # is_ip_literal reports whether the argument is an address rather than a name.
@@ -320,8 +331,11 @@ diagnose_status() {
 		STATUS_EXIT=11
 		;;
 	400)
-		log "verdict: REJECTED 400 invalid request — the broker could not parse the body or the"
-		log "         reference it built from the binding. A harness bug, not a lifecycle result."
+		log "verdict: REJECTED 400 invalid request — the broker refused the body. Its decoder is"
+		log "         strict, so this is either a harness bug or a field it will not accept at all:"
+		log "         with CLAIM_UUID set, a 400 means the caller-supplied instance_uuid was REFUSED"
+		log "         rather than ignored, which is a stronger answer than the plan expected and not"
+		log "         a lifecycle result about the nonce itself."
 		STATUS_EXIT=14
 		;;
 	500)

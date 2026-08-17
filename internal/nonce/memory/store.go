@@ -1,8 +1,10 @@
 package memory
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -108,6 +110,39 @@ func (s *Store) Get(ctx context.Context, id nonce.NonceID) (nonce.Record, error)
 	}
 
 	return record, nil
+}
+
+// ListExpired returns every stored record that is expired at now and was never
+// consumed. A consumed record is deliberately withheld: its configuration value
+// can no longer redeem, and the record is what makes a replay answer "already
+// used" instead of "not found".
+//
+// The result is sorted by nonce ID so a sweep, and the log it produces, is
+// reproducible. Map iteration order would otherwise reshuffle the evidence of
+// every reap for no reason.
+func (s *Store) ListExpired(ctx context.Context, now time.Time) ([]nonce.Record, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("memory: list expired nonces: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	expired := make([]nonce.Record, 0, len(s.records))
+
+	for _, record := range s.records {
+		if record.Used || !record.IsExpired(now) {
+			continue
+		}
+
+		expired = append(expired, record)
+	}
+
+	slices.SortFunc(expired, func(left nonce.Record, right nonce.Record) int {
+		return cmp.Compare(left.ID, right.ID)
+	})
+
+	return expired, nil
 }
 
 // Delete removes the record for id.

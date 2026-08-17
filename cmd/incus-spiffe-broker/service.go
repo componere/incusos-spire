@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,14 +26,25 @@ const (
 	maxRequestBytes = 4096
 	// contentTypeJSON is the media type of every answer, including failures.
 	contentTypeJSON = "application/json"
+	// headerAuthorization carries the operator bearer token on the mint path.
+	headerAuthorization = "Authorization"
+	// headerAuthenticate names the challenge header a refused mint answers with.
+	headerAuthenticate = "WWW-Authenticate"
+	// bearerScheme is the only authorization scheme the mint path accepts.
+	bearerScheme = "Bearer"
+	// bearerChallenge is the value of the challenge header on a refused mint. It
+	// names the scheme and nothing about why the presentation failed.
+	//nolint:gosec // G101 false positive: this is an authentication challenge, not a credential.
+	bearerChallenge = `Bearer realm="incus-spiffe-broker"`
 )
 
 const (
 	// codeInvalidRequest names a request this service could not parse.
 	codeInvalidRequest = "invalid_request"
-	// codeUnauthorized names a refused nonce presentation. It is the single
-	// code for an unknown nonce and for a wrong secret alike, so the answer
-	// cannot be used to enumerate live nonce IDs.
+	// codeUnauthorized names a refused presentation of a credential: a nonce
+	// on the guest path, the operator bearer token on the mint path. It is the
+	// single code for an unknown nonce, a wrong secret, a missing token, and a
+	// wrong token alike, so no answer can be used to enumerate anything.
 	codeUnauthorized = "unauthorized"
 	// codeConflict names a nonce or instance state that cannot be redeemed:
 	// expired, already used, bound elsewhere, or rolled back.
@@ -49,6 +62,38 @@ const (
 	operationMint = "mint"
 	// operationRedeem labels the guest path in log records.
 	operationRedeem = "redeem"
+	// operationReap labels the expired-nonce sweep in log records.
+	operationReap = "reap"
+)
+
+// The names of the log fields that appear in more than one record. They are
+// constants so the shape of a decision record cannot drift between the call
+// sites the live run reads together.
+const (
+	// fieldOperation names which endpoint or task produced the record.
+	fieldOperation = "operation"
+	// fieldOutcome names the decision: granted or denied.
+	fieldOutcome = "outcome"
+	// fieldNonceID names the public nonce identifier.
+	fieldNonceID = "nonce_id"
+	// fieldInstanceUUID names the bound volatile.uuid.
+	fieldInstanceUUID = "instance_uuid"
+	// fieldInstanceName names the live instance name.
+	fieldInstanceName = "instance_name"
+	// fieldProject names the Incus project.
+	fieldProject = "project"
+	// fieldExpiresAt names the instant a nonce stops being redeemable.
+	fieldExpiresAt = "expires_at"
+	// fieldHTTPStatus names the answered status code.
+	fieldHTTPStatus = "http_status"
+	// fieldCode names the answered error code.
+	fieldCode = "code"
+	// fieldReason names the detail that never reaches the caller.
+	fieldReason = "reason"
+	// fieldPeerAddress names the address the request arrived from.
+	fieldPeerAddress = "peer_address"
+	// fieldWithdrawal names why a withdrawal did not complete.
+	fieldWithdrawal = "withdrawal"
 )
 
 // bindingLookup is the slice of the nonce store this service reads directly: it
@@ -72,6 +117,7 @@ type nonceMinter interface {
 		name attestor.InstanceName,
 		uuid attestor.InstanceUUID,
 		generation attestor.GenerationUUID,
+		opts ...nonce.MintOption,
 	) (nonce.Issued, error)
 	// Redeem consumes the nonce and confirms it is bound to live, the record
 	// the read path resolved independently.
@@ -84,6 +130,15 @@ type nonceMinter interface {
 	// Clear empties the bootstrap configuration key. It runs after a
 	// redemption commits, never before.
 	Clear(ctx context.Context, project attestor.ProjectName, name attestor.InstanceName) error
+	// Revoke withdraws a nonce nobody redeemed: it clears the bootstrap key and
+	// deletes the record. The service calls it to compensate a mint whose
+	// operator never learned the nonce ID.
+	Revoke(
+		ctx context.Context,
+		id nonce.NonceID,
+		project attestor.ProjectName,
+		name attestor.InstanceName,
+	) error
 }
 
 // selectorDeriver is the port into the pure selector core. The service does not
@@ -91,6 +146,31 @@ type nonceMinter interface {
 type selectorDeriver interface {
 	// Derive returns the frozen selector set for the referenced instance.
 	Derive(ctx context.Context, ref attestor.Reference) ([]attestor.Selector, error)
+}
+
+// expiredLister is the slice of the nonce store the reaper reads: the records
+// whose TTL elapsed with nobody redeeming them, which are exactly the records
+// whose bootstrap key may still hold a live secret.
+type expiredLister interface {
+	// ListExpired returns the expired, unconsumed records at now.
+	ListExpired(ctx context.Context, now time.Time) ([]nonce.Record, error)
+}
+
+// nonceWithdrawer is the port the reaper drives. It is narrower than
+// [nonceMinter] on purpose: a sweep may only withdraw, never mint or redeem.
+type nonceWithdrawer interface {
+	// Revoke clears the bootstrap key of an unredeemed nonce and deletes its
+	// record. It refuses a record that was consumed in the meantime.
+	Revoke(
+		ctx context.Context,
+		id nonce.NonceID,
+		project attestor.ProjectName,
+		name attestor.InstanceName,
+	) error
+	// Discard deletes the record of an unredeemed nonce without touching any
+	// instance configuration. It is the withdrawal for a nonce whose instance no
+	// longer exists.
+	Discard(ctx context.Context, id nonce.NonceID) error
 }
 
 // mintRequest is the operator request body. project is optional and defaults to
@@ -102,6 +182,12 @@ type mintRequest struct {
 	InstanceUUID string `json:"instance_uuid"`
 	// Project scopes the lookup. Empty means the configured default project.
 	Project string `json:"project"`
+	// TTLSeconds optionally shortens the lifetime of this one nonce. Absent
+	// means the service's configured TTL; a value that is not positive or that
+	// exceeds the configured maximum is refused rather than clamped, because an
+	// operator who asked for a five-second window and silently received ten
+	// minutes has been told something untrue about a bearer credential.
+	TTLSeconds *int64 `json:"ttl_seconds"`
 }
 
 // mintResponse is the operator answer.
@@ -129,12 +215,16 @@ type mintResponse struct {
 	Project attestor.ProjectName `json:"project"`
 }
 
-// redeemRequest is the guest request body: the two secret-bearing fields of the
-// bootstrap payload as the guest read them out of user.spiffe-bootstrap.
+// redeemRequest is the guest request body: the bootstrap payload as the guest
+// read it out of user.spiffe-bootstrap.
 //
-// Unknown fields are ignored so a guest may forward the payload document
-// verbatim. An instance_uuid a caller adds is therefore accepted and ignored;
-// the binding is resolved server-side from the nonce record.
+// All four payload fields are accepted so a guest may forward the document it
+// read verbatim, and the two that address the broker are ignored: a caller
+// cannot tell this service where to find itself. Any other field is refused
+// with 400, so a stale client or a typo is reported instead of silently
+// dropped. That includes instance_uuid: the binding is resolved server-side
+// from the nonce record, and a caller-claimed identity is not merely ignored,
+// it is not accepted at all.
 type redeemRequest struct {
 	// NonceID is the public nonce identifier.
 	NonceID string `json:"nonce_id"`
@@ -143,6 +233,14 @@ type redeemRequest struct {
 	// has the shortest possible life. [redeemRequest.LogValue] and
 	// [redeemRequest.String] redact it in the meantime.
 	Nonce string `json:"nonce"`
+	// BrokerURL is the endpoint the guest was told to contact. It is accepted
+	// because it is part of the payload document and ignored because the
+	// request already arrived here.
+	BrokerURL string `json:"broker_url"`
+	// BrokerFingerprint is the certificate the guest was told to pin. It is
+	// accepted for the same reason and ignored because the guest has already
+	// completed the handshake this value governs.
+	BrokerFingerprint string `json:"broker_fingerprint"`
 }
 
 // String redacts the request. It satisfies [fmt.Stringer] so that %v and %s on
@@ -203,6 +301,17 @@ type ServiceConfig struct {
 	Deriver selectorDeriver
 	// Logger receives every mint and every redemption decision.
 	Logger *slog.Logger
+	// MintTokenDigest is the SHA-256 of the operator bearer token that
+	// authorizes the mint path. The digest is held instead of the token so the
+	// running service never carries the credential itself, and the comparison
+	// is over two fixed-length values.
+	MintTokenDigest [sha256.Size]byte
+	// MaxNonceTTL is the longest lifetime a mint request may ask for. A request
+	// above it is refused.
+	MaxNonceTTL time.Duration
+	// CompensationTimeout bounds the detached withdrawal of a mint whose caller
+	// went away before it could learn the nonce ID.
+	CompensationTimeout time.Duration
 }
 
 // Service serves the two bootstrap endpoints. It holds no mutable state: the
@@ -218,6 +327,12 @@ type Service struct {
 	deriver selectorDeriver
 	// logger receives every decision this service makes.
 	logger *slog.Logger
+	// mintTokenDigest is the SHA-256 of the accepted operator bearer token.
+	mintTokenDigest [sha256.Size]byte
+	// maxNonceTTL is the longest lifetime a mint request may ask for.
+	maxNonceTTL time.Duration
+	// compensationTimeout bounds a detached mint withdrawal.
+	compensationTimeout time.Duration
 }
 
 // NewService validates cfg and returns a concrete [Service].
@@ -236,14 +351,23 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		return nil, errors.New("broker: service requires a selector deriver")
 	case cfg.Logger == nil:
 		return nil, errors.New("broker: service requires a logger")
+	case cfg.MintTokenDigest == [sha256.Size]byte{}:
+		return nil, errors.New("broker: service requires an operator mint token digest")
+	case cfg.MaxNonceTTL <= 0:
+		return nil, errors.New("broker: service requires a positive maximum nonce TTL")
+	case cfg.CompensationTimeout <= 0:
+		return nil, errors.New("broker: service requires a positive compensation timeout")
 	}
 
 	return &Service{
-		reader:   cfg.Reader,
-		bindings: cfg.Bindings,
-		minter:   cfg.Minter,
-		deriver:  cfg.Deriver,
-		logger:   cfg.Logger,
+		reader:              cfg.Reader,
+		bindings:            cfg.Bindings,
+		minter:              cfg.Minter,
+		deriver:             cfg.Deriver,
+		logger:              cfg.Logger,
+		mintTokenDigest:     cfg.MintTokenDigest,
+		maxNonceTTL:         cfg.MaxNonceTTL,
+		compensationTimeout: cfg.CompensationTimeout,
 	}, nil
 }
 
@@ -261,68 +385,174 @@ func (s *Service) Handler() *http.ServeMux {
 	return mux
 }
 
-// handleMint provisions one guest: it resolves the requested UUID through the
-// read path and mints a nonce against the freshly resolved instance name.
+// handleMint provisions one guest: it authenticates the operator, resolves the
+// requested UUID through the read path, and mints a nonce against the freshly
+// resolved instance name.
+//
+// The authorization check comes before every other decision, and in particular
+// before the read path is touched. Minting writes a bearer credential into a
+// guest's configuration and spends the two privileged Incus credentials to do
+// it, so an unauthenticated caller must not be able to reach either one.
 //
 // The read is not optional and not cacheable. The bootstrap-writer credential
 // is denied every read (P5), so it cannot resolve a UUID itself, and an Incus
 // instance name is reusable after a delete and recreate (P6), so a name that
 // was correct a minute ago can address a different instance now.
 func (s *Service) handleMint(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	if !s.requirePost(ctx, w, r, operationMint) {
+	if !s.requirePost(w, r, operationMint) || !s.authorizeMint(w, r) {
 		return
 	}
 
 	var request mintRequest
 	if err := decodeRequest(w, r, &request); err != nil {
-		s.refuse(ctx, w, operationMint, "", "", http.StatusBadRequest, codeInvalidRequest, err.Error())
+		s.refuse(r, w, operationMint, "", "", http.StatusBadRequest, codeInvalidRequest, err.Error())
 
 		return
 	}
 
 	instanceUUID := attestor.InstanceUUID(strings.TrimSpace(request.InstanceUUID))
 	if instanceUUID == "" {
-		s.refuse(ctx, w, operationMint, "", "",
+		s.refuse(r, w, operationMint, "", "",
 			http.StatusBadRequest, codeInvalidRequest, "instance_uuid is required")
 
 		return
 	}
 
-	requested := attestor.ProjectName(strings.TrimSpace(request.Project))
-
-	live, err := s.reader.ReadInstanceByUUID(ctx, instanceUUID, requested)
+	ttl, err := s.requestedTTL(request)
 	if err != nil {
-		s.deny(ctx, w, operationMint, "", instanceUUID, err)
+		s.refuse(r, w, operationMint, "", instanceUUID,
+			http.StatusBadRequest, codeInvalidRequest, err.Error())
 
 		return
 	}
 
-	issued, err := s.minter.Mint(ctx, live.Project, live.Name, live.UUID, live.Generation)
+	ctx := r.Context()
+	requested := attestor.ProjectName(strings.TrimSpace(request.Project))
+
+	live, err := s.reader.ReadInstanceByUUID(ctx, instanceUUID, requested)
 	if err != nil {
-		s.deny(ctx, w, operationMint, "", live.UUID, err)
+		s.deny(r, w, operationMint, "", instanceUUID, err)
+
+		return
+	}
+
+	issued, err := s.minter.Mint(ctx, live.Project, live.Name, live.UUID, live.Generation,
+		nonce.WithMintTTL(ttl))
+	if err != nil {
+		s.deny(r, w, operationMint, "", live.UUID, err)
 
 		return
 	}
 
 	s.logger.InfoContext(ctx, "bootstrap nonce minted",
-		"operation", operationMint,
-		"nonce_id", issued.ID,
-		"instance_uuid", live.UUID,
-		"instance_name", live.Name,
+		fieldOperation, operationMint,
+		fieldNonceID, issued.ID,
+		fieldInstanceUUID, live.UUID,
+		fieldInstanceName, live.Name,
 		"generation", live.Generation,
-		"project", live.Project,
-		"expires_at", issued.ExpiresAt,
+		fieldProject, live.Project,
+		fieldExpiresAt, issued.ExpiresAt,
 	)
 
-	s.writeJSON(ctx, w, http.StatusCreated, mintResponse{
+	s.acknowledgeMint(ctx, w, issued, live)
+}
+
+// acknowledgeMint hands the minted nonce ID to the operator, and withdraws the
+// nonce again if it cannot.
+//
+// The bootstrap key is already written at this point, so a caller that never
+// receives the answer would leave a live bearer credential in a guest's
+// configuration that no operator knows about and no guest was told to expect.
+// A cancelled request context and an undeliverable body are the two ways that
+// happens, and both are compensated rather than logged and forgotten.
+func (s *Service) acknowledgeMint(
+	ctx context.Context,
+	w http.ResponseWriter,
+	issued nonce.Issued,
+	live attestor.InstanceRecord,
+) {
+	if err := ctx.Err(); err != nil {
+		s.withdrawMint(ctx, issued.ID, live, err)
+
+		return
+	}
+
+	if err := s.writeJSON(ctx, w, http.StatusCreated, mintResponse{
 		NonceID:      issued.ID,
 		ExpiresAt:    issued.ExpiresAt,
 		InstanceUUID: live.UUID,
 		InstanceName: live.Name,
 		Generation:   live.Generation,
 		Project:      live.Project,
-	})
+	}); err != nil {
+		s.withdrawMint(ctx, issued.ID, live, err)
+	}
+}
+
+// withdrawMint clears the bootstrap key and deletes the record of a nonce whose
+// operator never learned its ID.
+//
+// The withdrawal runs on a context detached from the caller's, because the
+// caller is the thing that failed: reusing a cancelled context would make the
+// compensation fail exactly when it is needed. If the guest redeemed in the
+// meantime the withdrawal is refused by the core and recorded, because the
+// redemption path owns the clear for a consumed nonce.
+func (s *Service) withdrawMint(
+	ctx context.Context,
+	id nonce.NonceID,
+	live attestor.InstanceRecord,
+	cause error,
+) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.compensationTimeout)
+	defer cancel()
+
+	record := []any{
+		fieldOperation, operationMint,
+		fieldNonceID, id,
+		fieldInstanceUUID, live.UUID,
+		fieldInstanceName, live.Name,
+		fieldProject, live.Project,
+		fieldReason, cause.Error(),
+	}
+
+	err := s.minter.Revoke(cleanup, id, live.Project, live.Name)
+
+	switch {
+	case err == nil:
+		s.logger.WarnContext(cleanup, "unacknowledged mint withdrawn", record...)
+	case errors.Is(err, nonce.ErrNonceAlreadyUsed):
+		s.logger.WarnContext(cleanup, "unacknowledged mint was redeemed before it could be withdrawn",
+			append(record, fieldWithdrawal, err.Error())...)
+	default:
+		s.logger.ErrorContext(cleanup, "unacknowledged mint not withdrawn",
+			append(record, fieldWithdrawal, err.Error())...)
+	}
+}
+
+// requestedTTL resolves the lifetime one mint request asks for. A zero result
+// means "the service's configured TTL", which is what [nonce.WithMintTTL]
+// applies for a non-positive duration.
+//
+// A request above the configured maximum is refused instead of clamped. The
+// answer carries no detail, but the log does, and an operator who asked for a
+// window this service will not grant deserves to be told rather than quietly
+// given a longer one.
+func (s *Service) requestedTTL(request mintRequest) (time.Duration, error) {
+	if request.TTLSeconds == nil {
+		return 0, nil
+	}
+
+	seconds := *request.TTLSeconds
+	if seconds <= 0 {
+		return 0, fmt.Errorf("ttl_seconds must be positive, got %d", seconds)
+	}
+
+	ttl := time.Duration(seconds) * time.Second
+	if ttl > s.maxNonceTTL || ttl <= 0 {
+		return 0, fmt.Errorf("ttl_seconds must not exceed %d", int64(s.maxNonceTTL/time.Second))
+	}
+
+	return ttl, nil
 }
 
 // handleRedeem consumes a nonce presented by a guest.
@@ -330,17 +560,22 @@ func (s *Service) handleMint(w http.ResponseWriter, r *http.Request) {
 // The caller supplies a nonce ID and a secret and nothing else that matters.
 // The bound UUID comes from the nonce record, the live instance record comes
 // from the read path, and only then is the nonce consumed. A caller-claimed
-// instance identity is ignored, which is what stops one guest from presenting
-// its own valid nonce while asking for another instance's identity.
+// instance identity is refused outright, which is what stops one guest from
+// presenting its own valid nonce while asking for another instance's identity.
+//
+// This endpoint carries no operator authentication, unlike [mintPath]. The
+// nonce is the guest's credential: a guest has no other secret to present, and
+// requiring one would mean provisioning a second credential to protect the
+// first. See the package documentation for the full asymmetry argument.
 func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if !s.requirePost(ctx, w, r, operationRedeem) {
+	if !s.requirePost(w, r, operationRedeem) {
 		return
 	}
 
 	var request redeemRequest
 	if err := decodeRequest(w, r, &request); err != nil {
-		s.refuse(ctx, w, operationRedeem, "", "", http.StatusBadRequest, codeInvalidRequest, err.Error())
+		s.refuse(r, w, operationRedeem, "", "", http.StatusBadRequest, codeInvalidRequest, err.Error())
 
 		return
 	}
@@ -350,7 +585,7 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 	request.Nonce = ""
 
 	if secret.IsZero() {
-		s.deny(ctx, w, operationRedeem, id, "",
+		s.deny(r, w, operationRedeem, id, "",
 			fmt.Errorf("%w: empty secret presentation", nonce.ErrSecretMismatch))
 
 		return
@@ -358,21 +593,21 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 
 	record, err := s.bindings.Get(ctx, id)
 	if err != nil {
-		s.deny(ctx, w, operationRedeem, id, "", classifyLookup(id, err))
+		s.deny(r, w, operationRedeem, id, "", classifyLookup(id, err))
 
 		return
 	}
 
 	live, err := s.reader.ReadInstanceByUUID(ctx, record.Instance, record.Project)
 	if err != nil {
-		s.deny(ctx, w, operationRedeem, id, record.Instance, err)
+		s.deny(r, w, operationRedeem, id, record.Instance, err)
 
 		return
 	}
 
 	consumed, err := s.minter.Redeem(ctx, id, secret, live)
 	if err != nil {
-		s.deny(ctx, w, operationRedeem, id, record.Instance, err)
+		s.deny(r, w, operationRedeem, id, record.Instance, err)
 
 		return
 	}
@@ -386,23 +621,23 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 		Server:       "",
 	})
 	if err != nil {
-		s.deny(ctx, w, operationRedeem, id, consumed.Instance, err)
+		s.deny(r, w, operationRedeem, id, consumed.Instance, err)
 
 		return
 	}
 
 	s.logger.InfoContext(ctx, "bootstrap nonce redeemed",
-		"operation", operationRedeem,
-		"outcome", "granted",
-		"nonce_id", consumed.ID,
-		"instance_uuid", consumed.Instance,
-		"instance_name", live.Name,
+		fieldOperation, operationRedeem,
+		fieldOutcome, "granted",
+		fieldNonceID, consumed.ID,
+		fieldInstanceUUID, consumed.Instance,
+		fieldInstanceName, live.Name,
 		"generation", consumed.Generation,
-		"project", consumed.Project,
-		"http_status", http.StatusOK,
+		fieldProject, consumed.Project,
+		fieldHTTPStatus, http.StatusOK,
 	)
 
-	s.writeJSON(ctx, w, http.StatusOK, redeemResponse{
+	_ = s.writeJSON(ctx, w, http.StatusOK, redeemResponse{
 		NonceID:      consumed.ID,
 		InstanceUUID: consumed.Instance,
 		InstanceName: live.Name,
@@ -422,36 +657,61 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 func (s *Service) clearBootstrap(ctx context.Context, id nonce.NonceID, live attestor.InstanceRecord) {
 	if err := s.minter.Clear(ctx, live.Project, live.Name); err != nil {
 		s.logger.ErrorContext(ctx, "bootstrap key not cleared after redemption committed",
-			"operation", operationRedeem,
-			"nonce_id", id,
-			"instance_uuid", live.UUID,
-			"instance_name", live.Name,
-			"project", live.Project,
-			"reason", err.Error(),
+			fieldOperation, operationRedeem,
+			fieldNonceID, id,
+			fieldInstanceUUID, live.UUID,
+			fieldInstanceName, live.Name,
+			fieldProject, live.Project,
+			fieldReason, err.Error(),
 		)
 
 		return
 	}
 
 	s.logger.InfoContext(ctx, "bootstrap key cleared",
-		"operation", operationRedeem,
-		"nonce_id", id,
-		"instance_uuid", live.UUID,
-		"instance_name", live.Name,
-		"project", live.Project,
+		fieldOperation, operationRedeem,
+		fieldNonceID, id,
+		fieldInstanceUUID, live.UUID,
+		fieldInstanceName, live.Name,
+		fieldProject, live.Project,
 	)
 }
 
 // requirePost answers a non-POST request with the uniform 405 body and reports
 // whether the caller may continue.
-func (s *Service) requirePost(ctx context.Context, w http.ResponseWriter, r *http.Request, operation string) bool {
+func (s *Service) requirePost(w http.ResponseWriter, r *http.Request, operation string) bool {
 	if r.Method == http.MethodPost {
 		return true
 	}
 
 	w.Header().Set("Allow", http.MethodPost)
-	s.refuse(ctx, w, operation, "", "",
+	s.refuse(r, w, operation, "", "",
 		http.StatusMethodNotAllowed, codeMethodNotAllowed, "method "+r.Method+" is not allowed")
+
+	return false
+}
+
+// authorizeMint reports whether the request presented the operator bearer
+// token, and refuses it with 401 if it did not.
+//
+// The presentation is hashed and compared against the configured digest in
+// constant time. Hashing first is what makes the comparison safe: both sides are
+// then a fixed 32 bytes, so neither the length of the presented token nor the
+// position of its first wrong byte is observable, and a missing header costs
+// exactly what a wrong token costs.
+//
+// The refusal is logged with the peer address, because a probe against this
+// endpoint is the first thing an operator needs to see, and never with the
+// presented value.
+func (s *Service) authorizeMint(w http.ResponseWriter, r *http.Request) bool {
+	presented := sha256.Sum256([]byte(bearerToken(r.Header.Get(headerAuthorization))))
+	if subtle.ConstantTimeCompare(presented[:], s.mintTokenDigest[:]) == 1 {
+		return true
+	}
+
+	w.Header().Set(headerAuthenticate, bearerChallenge)
+	s.refuse(r, w, operationMint, "", "",
+		http.StatusUnauthorized, codeUnauthorized, "operator bearer token missing or not accepted")
 
 	return false
 }
@@ -461,7 +721,7 @@ func (s *Service) requirePost(ctx context.Context, w http.ResponseWriter, r *htt
 // run has a decision record for each case, and no reason ever carries secret
 // material: the presented secret is a [nonce.Secret], which redacts itself.
 func (s *Service) deny(
-	ctx context.Context,
+	r *http.Request,
 	w http.ResponseWriter,
 	operation string,
 	id nonce.NonceID,
@@ -469,14 +729,18 @@ func (s *Service) deny(
 	err error,
 ) {
 	status, code := failureStatus(err)
-	s.refuse(ctx, w, operation, id, instanceUUID, status, code, err.Error())
+	s.refuse(r, w, operation, id, instanceUUID, status, code, err.Error())
 }
 
 // refuse logs one refusal and writes the uniform body. A 5xx is a fault an
 // operator must look at, so it is logged at error level; a 4xx is an expected
 // answer and is logged at warn level.
+//
+// Every refusal records the peer address. It is the only thing this service
+// knows about who asked, and a rejected mint or a rejected nonce is exactly the
+// event an operator has to attribute.
 func (s *Service) refuse(
-	ctx context.Context,
+	r *http.Request,
 	w http.ResponseWriter,
 	operation string,
 	id nonce.NonceID,
@@ -485,14 +749,16 @@ func (s *Service) refuse(
 	code string,
 	reason string,
 ) {
+	ctx := r.Context()
 	record := []any{
-		"operation", operation,
-		"outcome", "denied",
-		"nonce_id", id,
-		"instance_uuid", instanceUUID,
-		"http_status", status,
-		"code", code,
-		"reason", reason,
+		fieldOperation, operation,
+		fieldOutcome, "denied",
+		fieldNonceID, id,
+		fieldInstanceUUID, instanceUUID,
+		fieldPeerAddress, r.RemoteAddr,
+		fieldHTTPStatus, status,
+		fieldCode, code,
+		fieldReason, reason,
 	}
 
 	if status >= http.StatusInternalServerError {
@@ -501,25 +767,51 @@ func (s *Service) refuse(
 		s.logger.WarnContext(ctx, "bootstrap request denied", record...)
 	}
 
-	s.writeJSON(ctx, w, status, errorResponse{Error: code})
+	_ = s.writeJSON(ctx, w, status, errorResponse{Error: code})
 }
 
-// writeJSON writes one JSON document with the given status. A write failure is
-// logged and nothing else: the status line is already on the wire.
-func (s *Service) writeJSON(ctx context.Context, w http.ResponseWriter, status int, body any) {
+// writeJSON writes one JSON document with the given status and reports whether
+// the body reached the caller. A failure is logged here; whether it also has to
+// be compensated is the caller's decision.
+func (s *Service) writeJSON(ctx context.Context, w http.ResponseWriter, status int, body any) error {
 	w.Header().Set("Content-Type", contentTypeJSON)
 	w.WriteHeader(status)
 
 	if err := json.NewEncoder(w).Encode(body); err != nil {
-		s.logger.ErrorContext(ctx, "write response body", "http_status", status, "reason", err.Error())
+		s.logger.ErrorContext(ctx, "write response body", fieldHTTPStatus, status, fieldReason, err.Error())
+
+		return fmt.Errorf("write response body: %w", err)
 	}
+
+	return nil
+}
+
+// bearerToken returns the credentials of a bearer authorization header, or the
+// empty string for a missing header or any other scheme. The caller hashes the
+// result either way, so an absent token follows the same path as a wrong one.
+func bearerToken(header string) string {
+	scheme, credentials, found := strings.Cut(header, " ")
+	if !found || !strings.EqualFold(scheme, bearerScheme) {
+		return ""
+	}
+
+	return strings.TrimSpace(credentials)
 }
 
 // decodeRequest reads one bounded JSON object into dest. The body limit is
 // enforced with [net/http.MaxBytesReader], so an oversized body is refused
 // instead of buffered.
+//
+// Unknown fields are refused. A request this service does not fully understand
+// is a request it must not half-apply: silently dropping an unrecognised field
+// is how a security parameter such as ttl_seconds came to be advertised and
+// ignored, and a caller is better served by a 400 than by an answer that looks
+// like agreement.
 func decodeRequest(w http.ResponseWriter, r *http.Request, dest any) error {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBytes)).Decode(dest); err != nil {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(dest); err != nil {
 		return fmt.Errorf("decode request body: %w", err)
 	}
 
@@ -575,4 +867,204 @@ func failureStatus(err error) (int, string) {
 	default:
 		return http.StatusInternalServerError, codeInternal
 	}
+}
+
+// ReaperConfig carries the collaborators of a [Reaper]. Every field is required;
+// composition happens in main.
+type ReaperConfig struct {
+	// Reader resolves a bound UUID to the live instance record, which is the
+	// only source of the instance name a clear can be addressed to.
+	Reader attestor.InstanceReader
+	// Expired lists the records whose TTL elapsed unredeemed.
+	Expired expiredLister
+	// Withdrawer clears the bootstrap key and drops the record.
+	Withdrawer nonceWithdrawer
+	// Logger receives one record per withdrawal and per failure.
+	Logger *slog.Logger
+	// Interval is the period between sweeps.
+	Interval time.Duration
+	// Timeout bounds one sweep, including every Incus call it makes.
+	Timeout time.Duration
+	// Grace is how long past expiry a record is left alone before it is
+	// withdrawn. It may be zero.
+	Grace time.Duration
+}
+
+// Reaper withdraws nonces that expired without being redeemed.
+//
+// It exists because expiry alone does not remove anything: a nonce that nobody
+// redeems stops being redeemable, but its secret stays readable in the guest's
+// configuration key and its record stays in the store. Both accumulate for as
+// long as the process lives, and the readable value is a bearer credential that
+// simply stopped working.
+//
+// Sweeping is safe against a concurrent redemption for two reasons that hold
+// together. A redemption can only commit while the nonce is unexpired, and a
+// sweep only considers records that are already expired, so the two windows do
+// not overlap. Any redemption that committed just before expiry is visible to
+// the sweep, because a [nonce.Store] serialises its consume against its reads,
+// and the core refuses to withdraw a consumed record. A clear that fails is
+// therefore never compensated by dropping the record: the record stays, and the
+// next tick tries again.
+//
+// A record is not withdrawn the instant it expires. Grace keeps it for a while
+// longer, because the documented answer for a nonce that expired is 409 and the
+// answer for a nonce that no longer exists is 401: withdrawing immediately would
+// turn the first into the second and cost an operator, and the live run, the
+// difference between "too late" and "never existed". The secret in the
+// configuration key stops working at expiry either way; grace bounds how long
+// the dead value lingers, it does not extend what it can do.
+type Reaper struct {
+	// reader resolves a bound UUID to the live instance record.
+	reader attestor.InstanceReader
+	// expired lists the records whose TTL elapsed unredeemed.
+	expired expiredLister
+	// withdrawer clears the bootstrap key and drops the record.
+	withdrawer nonceWithdrawer
+	// logger receives one record per withdrawal and per failure.
+	logger *slog.Logger
+	// interval is the period between sweeps.
+	interval time.Duration
+	// timeout bounds one sweep.
+	timeout time.Duration
+	// grace is how long past expiry a record is left alone.
+	grace time.Duration
+}
+
+// NewReaper validates cfg and returns a concrete [Reaper].
+func NewReaper(cfg ReaperConfig) (*Reaper, error) {
+	switch {
+	case cfg.Reader == nil:
+		return nil, errors.New("broker: reaper requires an instance reader")
+	case cfg.Expired == nil:
+		return nil, errors.New("broker: reaper requires an expired-record lister")
+	case cfg.Withdrawer == nil:
+		return nil, errors.New("broker: reaper requires a nonce withdrawer")
+	case cfg.Logger == nil:
+		return nil, errors.New("broker: reaper requires a logger")
+	case cfg.Interval <= 0:
+		return nil, errors.New("broker: reaper requires a positive interval")
+	case cfg.Timeout <= 0:
+		return nil, errors.New("broker: reaper requires a positive timeout")
+	case cfg.Grace < 0:
+		return nil, errors.New("broker: reaper requires a non-negative grace period")
+	}
+
+	return &Reaper{
+		reader:     cfg.Reader,
+		expired:    cfg.Expired,
+		withdrawer: cfg.Withdrawer,
+		logger:     cfg.Logger,
+		interval:   cfg.Interval,
+		timeout:    cfg.Timeout,
+		grace:      cfg.Grace,
+	}, nil
+}
+
+// Run sweeps every interval until ctx is done, then returns. It is meant to be
+// started in its own goroutine alongside the listener and to stop with it.
+func (rp *Reaper) Run(ctx context.Context) {
+	ticker := time.NewTicker(rp.interval)
+	defer ticker.Stop()
+
+	rp.logger.InfoContext(ctx, "expired nonce reaper started",
+		fieldOperation, operationReap,
+		"interval", rp.interval.String(),
+		"timeout", rp.timeout.String(),
+		"grace", rp.grace.String(),
+	)
+
+	for {
+		select {
+		case <-ctx.Done():
+			rp.logger.InfoContext(ctx, "expired nonce reaper stopped", fieldOperation, operationReap)
+
+			return
+
+		case <-ticker.C:
+			rp.sweep(ctx)
+		}
+	}
+}
+
+// sweep withdraws every expired unredeemed nonce it can, under its own timeout
+// so one unreachable Incus cannot stall the reaper forever. A record it fails on
+// is left in place for the next tick.
+func (rp *Reaper) sweep(ctx context.Context) {
+	bounded, cancel := context.WithTimeout(ctx, rp.timeout)
+	defer cancel()
+
+	expired, err := rp.expired.ListExpired(bounded, time.Now().Add(-rp.grace))
+	if err != nil {
+		rp.logger.ErrorContext(bounded, "expired nonces not listed",
+			fieldOperation, operationReap,
+			fieldReason, err.Error(),
+		)
+
+		return
+	}
+
+	for _, record := range expired {
+		rp.withdraw(bounded, record)
+	}
+}
+
+// withdraw clears the bootstrap key of one expired nonce and deletes its record.
+//
+// The instance name is re-resolved through the read path first, because the
+// bootstrap-writer credential cannot resolve it (P5) and a name is reusable
+// after a delete and recreate (P6): clearing a stale name would empty the key of
+// whatever instance holds that name now. An instance that no longer exists took
+// its configuration with it, so only the record is dropped.
+func (rp *Reaper) withdraw(ctx context.Context, record nonce.Record) {
+	fields := []any{
+		fieldOperation, operationReap,
+		fieldNonceID, record.ID,
+		fieldInstanceUUID, record.Instance,
+		fieldProject, record.Project,
+		fieldExpiresAt, record.ExpiresAt,
+	}
+
+	live, err := rp.reader.ReadInstanceByUUID(ctx, record.Instance, record.Project)
+	if err != nil {
+		if errors.Is(err, attestor.ErrInstanceNotFound) {
+			rp.discard(ctx, record.ID, fields)
+
+			return
+		}
+
+		rp.logger.ErrorContext(ctx, "expired nonce not withdrawn; retrying on the next sweep",
+			append(fields, fieldReason, err.Error())...)
+
+		return
+	}
+
+	fields = append(fields, "instance_name", live.Name)
+
+	switch err := rp.withdrawer.Revoke(ctx, record.ID, live.Project, live.Name); {
+	case err == nil:
+		rp.logger.InfoContext(ctx, "expired nonce withdrawn", fields...)
+
+	case errors.Is(err, nonce.ErrNonceAlreadyUsed), errors.Is(err, nonce.ErrNonceNotFound):
+		rp.logger.InfoContext(ctx, "expired nonce needed no withdrawal",
+			append(fields, fieldReason, err.Error())...)
+
+	default:
+		rp.logger.ErrorContext(ctx, "expired nonce not withdrawn; retrying on the next sweep",
+			append(fields, fieldReason, err.Error())...)
+	}
+}
+
+// discard drops the record of an expired nonce whose instance is gone. There is
+// no configuration left to clear, and retrying the read forever would be the
+// only alternative.
+func (rp *Reaper) discard(ctx context.Context, id nonce.NonceID, fields []any) {
+	if err := rp.withdrawer.Discard(ctx, id); err != nil {
+		rp.logger.ErrorContext(ctx, "expired nonce record not dropped; retrying on the next sweep",
+			append(fields, fieldReason, err.Error())...)
+
+		return
+	}
+
+	rp.logger.WarnContext(ctx, "expired nonce record dropped: its instance no longer exists", fields...)
 }

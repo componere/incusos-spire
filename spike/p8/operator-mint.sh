@@ -34,8 +34,14 @@
 #   POST $BROKER_URL/v1alpha1/nonce
 #   {"instance_uuid": "...", "project": "...", "ttl_seconds": 120}
 #
-# ttl_seconds is optional and exists for the expiry case of lifecycle-matrix.sh;
-# omit MINT_TTL_SECONDS to let the broker apply its configured TTL.
+# ttl_seconds is OPTIONAL and BOUNDED. It exists for the expiry case of
+# lifecycle-matrix.sh. The broker validates it and caps it at its configured
+# maximum (-nonce-ttl), so the ttl that was asked for is not necessarily the ttl
+# that applies: the expires_at in the response is the only authority, and this
+# script always prints it. Omit MINT_TTL_SECONDS to take the broker default.
+# This script sends the field only when MINT_TTL_SECONDS is set, and refuses a
+# value that is not a positive integer, because the mint decoder now REJECTS
+# unknown and malformed fields with HTTP 400 instead of silently dropping them.
 #
 #   201 (or 200) {"nonce_id": "...", "expires_at": "<RFC3339>",
 #                 "instance_name": "...", "instance_uuid": "...",
@@ -75,7 +81,9 @@ NONCE_PATH="${NONCE_PATH:-/v1alpha1/nonce}"
 INSTANCE_UUID="${INSTANCE_UUID:-}"
 PROJECT="${PROJECT:-spike-spiffe}"
 
-# Optional TTL override, used by the expiry case of the lifecycle matrix.
+# Optional TTL request, used by the expiry case of the lifecycle matrix. Unset
+# means the field is not sent at all. When set it must be a positive integer
+# number of seconds; the broker caps it at its configured maximum.
 MINT_TTL_SECONDS="${MINT_TTL_SECONDS:-}"
 
 # TLS. BROKER_CACERT is the spike CA; BROKER_FINGERPRINT additionally pins the
@@ -85,8 +93,11 @@ BROKER_FINGERPRINT="${BROKER_FINGERPRINT:-}"
 BROKER_TLS_HOSTNAME="${BROKER_TLS_HOSTNAME:-}"
 ALLOW_INSECURE_TLS="${ALLOW_INSECURE_TLS:-0}"
 
-# Optional operator authorization. The file form is preferred: a value in the
-# environment is visible to anything that reads /proc/<pid>/environ.
+# Operator authorization. The mint endpoint requires it: the broker compares the
+# presented bearer token against the digest of its -mint-token-file and answers
+# 401 otherwise. The file form is preferred, because a value in the environment
+# is visible to anything that reads /proc/<pid>/environ. Both are left optional
+# here so the 401 refusal itself can be demonstrated.
 MINT_AUTH_TOKEN_FILE="${MINT_AUTH_TOKEN_FILE:-}"
 MINT_AUTH_TOKEN="${MINT_AUTH_TOKEN:-}"
 
@@ -156,7 +167,9 @@ may also be given as INSTANCE_UUID):
   BROKER_URL=https://host:port   default https://spike-broker:8443
   NONCE_PATH=/v1alpha1/nonce     mint endpoint path
   PROJECT=name                   default spike-spiffe
-  MINT_TTL_SECONDS=N             request a short TTL (expiry case)
+  MINT_TTL_SECONDS=N             optional positive integer; the broker caps it
+                                 at its configured maximum and the returned
+                                 expires_at is authoritative. Unset: not sent
   BROKER_CACERT=PATH             spike CA for chain validation (recommended)
   BROKER_FINGERPRINT=SHA256      additionally pin the broker leaf certificate
   BROKER_TLS_HOSTNAME=NAME       certificate SAN to validate against
@@ -322,10 +335,21 @@ main() {
 		config=(--config "$WORK_DIR/curl.conf")
 		token=""
 		log "mint: sending an operator bearer token (value withheld)"
+	else
+		# Not fatal: minting without a credential is exactly how the 401 refusal
+		# is demonstrated. It is announced so a 401 below is not a mystery.
+		warn "no operator bearer token configured (MINT_AUTH_TOKEN_FILE or MINT_AUTH_TOKEN)."
+		warn "The mint endpoint is authenticated, so expect HTTP 401 unless you are testing that refusal."
 	fi
 
+	# The body carries exactly the fields the mint API defines. ttl_seconds is
+	# sent ONLY when the operator asked for one: the broker rejects unknown or
+	# malformed fields with HTTP 400, and a bare --argjson would happily splice
+	# whatever MINT_TTL_SECONDS contained into the request.
 	local body
 	if [[ -n "$MINT_TTL_SECONDS" ]]; then
+		[[ "$MINT_TTL_SECONDS" =~ ^[1-9][0-9]*$ ]] ||
+			die 2 "MINT_TTL_SECONDS must be a positive integer number of seconds, got: $MINT_TTL_SECONDS"
 		body=$("$JQ_BIN" -cn --arg uuid "$INSTANCE_UUID" --arg project "$PROJECT" \
 			--argjson ttl "$MINT_TTL_SECONDS" \
 			'{instance_uuid: $uuid, project: $project, ttl_seconds: $ttl}')
@@ -336,7 +360,7 @@ main() {
 
 	local url="https://$request_host:$port$NONCE_PATH"
 	log "mint: POST $url"
-	log "mint: instance_uuid=$INSTANCE_UUID project=$PROJECT ttl_seconds=${MINT_TTL_SECONDS:-<broker default>}"
+	log "mint: instance_uuid=$INSTANCE_UUID project=$PROJECT ttl_seconds=${MINT_TTL_SECONDS:-<not sent: broker default>}"
 
 	local response="$WORK_DIR/response"
 	set +e
@@ -388,7 +412,10 @@ main() {
 		exit 14
 		;;
 	400)
-		log "verdict: REJECTED 400 invalid request — the broker could not parse the body or the UUID."
+		log "verdict: REJECTED 400 invalid request — the broker could not accept the body. The mint"
+		log "         decoder is strict: an unknown field, a malformed UUID, or a ttl_seconds outside"
+		log "         the permitted bound is a 400, not a silently ignored value. Check"
+		log "         MINT_TTL_SECONDS=${MINT_TTL_SECONDS:-<not sent>} against the broker's maximum."
 		log "RESULT mint outcome=rejected status=400 reason=$(json_field "$response" error reason message)"
 		exit 14
 		;;
@@ -426,7 +453,7 @@ main() {
 
 	log "minted:"
 	log "  nonce_id=${nonce_id:-<absent>}"
-	log "  expires_at=${expires_at:-<absent>}"
+	log "  expires_at=${expires_at:-<absent>}${MINT_TTL_SECONDS:+ (requested ttl_seconds=$MINT_TTL_SECONDS; the applied TTL is whatever the broker bound allowed)}"
 	log "  instance_name=${instance_name:-<absent>}"
 	log "  generation_uuid=${generation_uuid:-<absent>}"
 	log "  instance_uuid=${resolved_uuid:-<absent>}"

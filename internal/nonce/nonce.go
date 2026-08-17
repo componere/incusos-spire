@@ -189,6 +189,17 @@ type Store interface {
 	// Get returns the record for id without consuming it. It exists for
 	// operator inspection and evidence, never as a redemption path.
 	Get(ctx context.Context, id NonceID) (Record, error)
+	// ListExpired returns every record that is expired at now and was never
+	// consumed: exactly the set whose bootstrap configuration key may still
+	// hold a live secret nobody redeemed. It is the reaper's query, so an
+	// implementation must not consume, modify, or delete anything, and an
+	// empty result is a normal answer rather than [ErrNonceNotFound].
+	//
+	// Consumed records are excluded on purpose. Their configuration value can
+	// no longer redeem, and the record itself is what lets a replay be refused
+	// as already used instead of as unknown, so withdrawing it would trade a
+	// precise answer for nothing.
+	ListExpired(ctx context.Context, now time.Time) ([]Record, error)
 	// Delete removes the record for id. Deleting an absent record returns
 	// [ErrNonceNotFound].
 	Delete(ctx context.Context, id NonceID) error

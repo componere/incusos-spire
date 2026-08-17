@@ -37,6 +37,26 @@ const (
 	defaultNonceTTL = 10 * time.Minute
 	// defaultRequestTimeout bounds every Incus call the service makes.
 	defaultRequestTimeout = 10 * time.Second
+	// defaultReapInterval is the period between sweeps for expired, unredeemed
+	// nonces. It is short relative to a nonce lifetime, so a secret nobody
+	// redeemed leaves the guest's configuration soon after it stops working.
+	defaultReapInterval = time.Minute
+	// defaultReapTimeout bounds one whole sweep, which is a read and a clear per
+	// expired nonce. It is deliberately larger than a single Incus call: a sweep
+	// that runs out of time leaves the rest for the next tick rather than
+	// abandoning anything, but a timeout that cannot fit a handful of records
+	// would make no progress at all.
+	defaultReapTimeout = 30 * time.Second
+	// defaultReapGrace is how long past expiry a record is left alone before the
+	// sweep withdraws it. It keeps the documented answers apart: an expired nonce
+	// answers 409 while its record exists and 401 once it is gone, and a live run
+	// that redeems seconds after expiry must see the former.
+	defaultReapGrace = 2 * time.Minute
+	// minMintTokenLength is the shortest operator bearer token this service
+	// accepts, in characters. The token authorizes writing a bearer credential
+	// into a guest's configuration, so it is held to the same floor as the
+	// nonce secret it provisions: 32 characters of a random alphabet.
+	minMintTokenLength = 32
 	// shutdownTimeout bounds the graceful drain on SIGINT or SIGTERM.
 	shutdownTimeout = 10 * time.Second
 	// readHeaderTimeout bounds how long a caller may take to send headers.
@@ -88,8 +108,22 @@ type options struct {
 	BootstrapKeyPath string
 	// Project is the default Incus project of both credentials.
 	Project string
+	// MintTokenPath is the file holding the operator bearer token that
+	// authorizes the mint endpoint. It is required: there is no unauthenticated
+	// mode, because the endpoint writes a bearer credential into a guest.
+	MintTokenPath string
 	// NonceTTL is the lifetime of a minted nonce.
 	NonceTTL time.Duration
+	// MaxNonceTTL is the longest lifetime a mint request may ask for through
+	// ttl_seconds. It defaults to NonceTTL.
+	MaxNonceTTL time.Duration
+	// ReapInterval is the period between sweeps for expired, unredeemed nonces.
+	ReapInterval time.Duration
+	// ReapTimeout bounds one whole sweep, including every Incus call it makes.
+	ReapTimeout time.Duration
+	// ReapGrace is how long past expiry a record is left alone before it is
+	// withdrawn. Zero withdraws as soon as the next sweep sees it.
+	ReapGrace time.Duration
 	// RequestTimeout bounds every Incus call, including retries.
 	RequestTimeout time.Duration
 }
@@ -130,6 +164,9 @@ func parseOptions(args []string, lookupEnv envLookup) (options, error) {
 		envString(lookupEnv, "BOOTSTRAP_KEY", ""), "write-only bootstrap credential private key PEM")
 	flags.StringVar(&opts.Project, "project",
 		envString(lookupEnv, "PROJECT", ""), "default Incus project of both credentials")
+	flags.StringVar(&opts.MintTokenPath, "mint-token-file",
+		envString(lookupEnv, "MINT_TOKEN_FILE", ""),
+		"path to the file holding the operator bearer token for POST "+mintPath)
 
 	ttl, err := envDuration(lookupEnv, "NONCE_TTL", defaultNonceTTL)
 	if err != nil {
@@ -141,7 +178,35 @@ func parseOptions(args []string, lookupEnv envLookup) (options, error) {
 		return options{}, err
 	}
 
+	maxTTL, err := envDuration(lookupEnv, "MAX_NONCE_TTL", 0)
+	if err != nil {
+		return options{}, err
+	}
+
+	reapInterval, err := envDuration(lookupEnv, "REAP_INTERVAL", defaultReapInterval)
+	if err != nil {
+		return options{}, err
+	}
+
+	reapTimeout, err := envDuration(lookupEnv, "REAP_TIMEOUT", defaultReapTimeout)
+	if err != nil {
+		return options{}, err
+	}
+
+	reapGrace, err := envDuration(lookupEnv, "REAP_GRACE", defaultReapGrace)
+	if err != nil {
+		return options{}, err
+	}
+
 	flags.DurationVar(&opts.NonceTTL, "nonce-ttl", ttl, "lifetime of a minted nonce")
+	flags.DurationVar(&opts.MaxNonceTTL, "max-nonce-ttl", maxTTL,
+		"longest lifetime a mint request may ask for; defaults to -nonce-ttl")
+	flags.DurationVar(&opts.ReapInterval, "reap-interval", reapInterval,
+		"period between sweeps for expired, unredeemed nonces")
+	flags.DurationVar(&opts.ReapTimeout, "reap-timeout", reapTimeout,
+		"bound on one whole sweep for expired, unredeemed nonces")
+	flags.DurationVar(&opts.ReapGrace, "reap-grace", reapGrace,
+		"how long past expiry a nonce record is kept before the sweep withdraws it")
 	flags.DurationVar(&opts.RequestTimeout, "request-timeout", timeout, "bound on every Incus call")
 
 	if parseErr := flags.Parse(args); parseErr != nil {
@@ -150,6 +215,13 @@ func parseOptions(args []string, lookupEnv envLookup) (options, error) {
 
 	if extra := flags.Args(); len(extra) > 0 {
 		return options{}, fmt.Errorf("unexpected positional argument %q", extra[0])
+	}
+
+	// An unset maximum means "whatever this service already grants by default",
+	// which is the only value that cannot surprise an operator who never asked
+	// for a per-mint TTL at all.
+	if opts.MaxNonceTTL <= 0 {
+		opts.MaxNonceTTL = opts.NonceTTL
 	}
 
 	if validateErr := opts.validate(); validateErr != nil {
@@ -182,6 +254,7 @@ func (o options) validate() error {
 		{"bootstrap-cert", o.BootstrapCertPath},
 		{"bootstrap-key", o.BootstrapKeyPath},
 		{"project", o.Project},
+		{"mint-token-file", o.MintTokenPath},
 	}
 
 	var faults []string
@@ -206,6 +279,22 @@ func (o options) validate() error {
 
 	if o.RequestTimeout <= 0 {
 		faults = append(faults, "-request-timeout must be positive")
+	}
+
+	if o.MaxNonceTTL < o.NonceTTL {
+		faults = append(faults, "-max-nonce-ttl must not be shorter than -nonce-ttl")
+	}
+
+	if o.ReapInterval <= 0 {
+		faults = append(faults, "-reap-interval must be positive")
+	}
+
+	if o.ReapTimeout <= 0 {
+		faults = append(faults, "-reap-timeout must be positive")
+	}
+
+	if o.ReapGrace < 0 {
+		faults = append(faults, "-reap-grace must not be negative")
 	}
 
 	if err := validateAdvertiseURL(o.AdvertiseURL); err != nil {
@@ -234,18 +323,24 @@ func main() {
 	}))
 
 	if err := run(context.Background(), logger, os.Args[1:], os.LookupEnv); err != nil {
-		logger.Error("incus-spiffe-broker stopped", "reason", err.Error())
+		logger.Error("incus-spiffe-broker stopped", fieldReason, err.Error())
 		os.Exit(1)
 	}
 }
 
 // run builds the object graph and serves until the process is signalled.
 //
-// This is the only place the graph is assembled: two Incus adapters over two
-// separate credentials, the nonce store, the lifecycle core over both, the
-// selector core over the read adapter, and the HTTP surface over all of them.
+// This is the only place the graph is assembled: the operator token digest, two
+// Incus adapters over two separate credentials, the nonce store, the lifecycle
+// core over both, the selector core over the read adapter, the HTTP surface over
+// all of them, and the reaper that withdraws what nobody redeemed.
 func run(ctx context.Context, logger *slog.Logger, args []string, lookupEnv envLookup) error {
 	opts, err := parseOptions(args, lookupEnv)
+	if err != nil {
+		return err
+	}
+
+	mintTokenDigest, err := loadMintToken(opts.MintTokenPath)
 	if err != nil {
 		return err
 	}
@@ -293,17 +388,33 @@ func run(ctx context.Context, logger *slog.Logger, args []string, lookupEnv envL
 	)
 
 	service, err := NewService(ServiceConfig{
-		Reader:   reader,
-		Bindings: store,
-		Minter:   minter,
-		Deriver:  attestor.NewDeriver(reader),
-		Logger:   logger,
+		Reader:              reader,
+		Bindings:            store,
+		Minter:              minter,
+		Deriver:             attestor.NewDeriver(reader),
+		Logger:              logger,
+		MintTokenDigest:     mintTokenDigest,
+		MaxNonceTTL:         opts.MaxNonceTTL,
+		CompensationTimeout: opts.RequestTimeout,
 	})
 	if err != nil {
 		return err
 	}
 
-	return serve(ctx, logger, opts, service, serverCert, fingerprint)
+	reaper, err := NewReaper(ReaperConfig{
+		Reader:     reader,
+		Expired:    store,
+		Withdrawer: minter,
+		Logger:     logger,
+		Interval:   opts.ReapInterval,
+		Timeout:    opts.ReapTimeout,
+		Grace:      opts.ReapGrace,
+	})
+	if err != nil {
+		return err
+	}
+
+	return serve(ctx, logger, opts, service, reaper, serverCert, fingerprint)
 }
 
 // serve binds the listener, then serves TLS on it until the process is
@@ -313,11 +424,15 @@ func run(ctx context.Context, logger *slog.Logger, args []string, lookupEnv envL
 // means the port is actually held. An optimistic banner over a failed bind
 // would be worse than no banner at all: the live run reads this log to decide
 // that the broker is reachable.
+//
+// The reaper runs on the same signal context as the listener, so a drain stops
+// the sweep too and no withdrawal starts against a closing process.
 func serve(
 	ctx context.Context,
 	logger *slog.Logger,
 	opts options,
 	service *Service,
+	reaper *Reaper,
 	serverCert tls.Certificate,
 	fingerprint nonce.BrokerFingerprint,
 ) error {
@@ -356,10 +471,16 @@ func serve(
 		"redeem_url", string(opts.redeemURL()),
 		"tls_fingerprint", string(fingerprint),
 		"incus_url", opts.IncusURL,
-		"project", opts.Project,
+		fieldProject, opts.Project,
 		"nonce_ttl", opts.NonceTTL.String(),
+		"max_nonce_ttl", opts.MaxNonceTTL.String(),
+		"reap_interval", opts.ReapInterval.String(),
+		"reap_timeout", opts.ReapTimeout.String(),
+		"reap_grace", opts.ReapGrace.String(),
 		"request_timeout", opts.RequestTimeout.String(),
 	)
+
+	go reaper.Run(signalled)
 
 	failures := make(chan error, 1)
 
@@ -403,6 +524,39 @@ func leafFingerprint(cert tls.Certificate) (nonce.BrokerFingerprint, error) {
 	digest := sha256.Sum256(cert.Certificate[0])
 
 	return nonce.BrokerFingerprint(hex.EncodeToString(digest[:])), nil
+}
+
+// loadMintToken reads the operator bearer token and returns its SHA-256 digest.
+//
+// Only the digest travels into the service. The token itself is needed exactly
+// once, at startup, and a process that keeps a credential it will never present
+// has only created another place for it to leak from.
+//
+// A missing file and a short token are both startup failures. There is no
+// "authentication optional" mode: the endpoint this token guards writes a
+// bearer credential into a guest's configuration and spends both privileged
+// Incus credentials to do it, so a deployment that cannot produce a token is a
+// deployment that must not listen. The length floor is what makes the token
+// worth comparing at all; a short one would be guessable at a rate no
+// constant-time comparison can help with. Neither the token nor any part of it
+// appears in the error.
+func loadMintToken(path string) ([sha256.Size]byte, error) {
+	var digest [sha256.Size]byte
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return digest, fmt.Errorf("read operator mint token: %w", err)
+	}
+
+	token := strings.TrimSpace(string(raw))
+	if len(token) < minMintTokenLength {
+		return digest, fmt.Errorf(
+			"operator mint token in %s is %d characters; -mint-token-file requires at least %d",
+			path, len(token), minMintTokenLength,
+		)
+	}
+
+	return sha256.Sum256([]byte(token)), nil
 }
 
 // envString returns the environment default for a flag, or fallback.

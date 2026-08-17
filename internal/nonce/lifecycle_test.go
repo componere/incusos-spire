@@ -548,3 +548,209 @@ func TestNewMinterRequiresPorts(t *testing.T) {
 	require.Panics(t, func() { nonce.NewMinter(nil, mocks.NewMockBootstrapWriter(t)) })
 	require.Panics(t, func() { nonce.NewMinter(mocks.NewMockStore(t), nil) })
 }
+
+func TestMintAppliesAPerCallTTL(t *testing.T) {
+	t.Parallel()
+
+	const requested = 5 * time.Second
+
+	minter, store, writer := newMinter(t)
+
+	var stored nonce.Record
+
+	store.EXPECT().Put(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, record nonce.Record) { stored = record }).Return(nil).Once()
+	writer.EXPECT().WriteBootstrap(mock.Anything, testProject, testName, mock.Anything).Return(nil).Once()
+
+	issued, err := minter.Mint(t.Context(), testProject, testName, testUUID, testGeneration,
+		nonce.WithMintTTL(requested))
+	require.NoError(t, err)
+
+	// The per-call option decides this one issuance and nothing else.
+	require.Equal(t, fixedNow().Add(requested), issued.ExpiresAt)
+	require.Equal(t, fixedNow().Add(requested), stored.ExpiresAt)
+}
+
+func TestMintIgnoresAnUnusablePerCallTTL(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]nonce.MintOption{
+		"a negative duration": nonce.WithMintTTL(-time.Second),
+		"a zero duration":     nonce.WithMintTTL(0),
+		"no option at all":    nil,
+	}
+
+	for name, option := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			minter, store, writer := newMinter(t)
+			store.EXPECT().Put(mock.Anything, mock.Anything).Return(nil).Once()
+			writer.EXPECT().WriteBootstrap(mock.Anything, testProject, testName, mock.Anything).Return(nil).Once()
+
+			issued, err := minter.Mint(t.Context(), testProject, testName, testUUID, testGeneration, option)
+			require.NoError(t, err)
+
+			// A miscomputed lifetime falls back to the minter's policy rather
+			// than minting a nonce that is already expired.
+			require.Equal(t, fixedNow().Add(testTTL), issued.ExpiresAt)
+		})
+	}
+}
+
+func TestMintDeletesRecordWhenWriteFailsAndCallerIsGone(t *testing.T) {
+	t.Parallel()
+
+	minter, store, writer := newMinter(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	store.EXPECT().Put(mock.Anything, mock.Anything).Return(nil).Once()
+	writer.EXPECT().WriteBootstrap(mock.Anything, testProject, testName, mock.Anything).
+		RunAndReturn(func(_ context.Context, _ attestor.ProjectName, _ attestor.InstanceName, _ string) error {
+			// The operator hangs up while the write is in flight, so the write
+			// may or may not have landed and the caller's context is dead.
+			cancel()
+
+			return errors.New("incus: connection reset")
+		}).Once()
+
+	// The compensating delete must run on a live context. A store that refuses a
+	// cancelled context would otherwise leave a redeemable record behind.
+	store.EXPECT().Delete(mock.Anything, testID).
+		RunAndReturn(func(cleanup context.Context, _ nonce.NonceID) error {
+			require.NoError(t, cleanup.Err(), "the cleanup context must not inherit the caller's cancellation")
+
+			deadline, ok := cleanup.Deadline()
+			require.True(t, ok, "the cleanup context must stay bounded")
+			require.WithinDuration(t, time.Now(), deadline, time.Minute)
+
+			return nil
+		}).Once()
+
+	_, err := minter.Mint(ctx, testProject, testName, testUUID, testGeneration)
+	require.ErrorIs(t, err, nonce.ErrWriterUnavailable)
+	require.NotErrorIs(t, err, nonce.ErrStoreUnavailable)
+}
+
+func TestRevokeClearsTheKeyBeforeDroppingTheRecord(t *testing.T) {
+	t.Parallel()
+
+	minter, store, writer := newMinter(t)
+
+	var calls []string
+
+	unredeemed := boundRecord()
+	unredeemed.Used = false
+
+	store.EXPECT().Get(mock.Anything, testID).
+		Run(func(_ context.Context, _ nonce.NonceID) { calls = append(calls, "get") }).
+		Return(unredeemed, nil).Once()
+	writer.EXPECT().ClearBootstrap(mock.Anything, testProject, testName).
+		Run(func(_ context.Context, _ attestor.ProjectName, _ attestor.InstanceName) {
+			calls = append(calls, "clear")
+		}).Return(nil).Once()
+	store.EXPECT().Delete(mock.Anything, testID).
+		Run(func(_ context.Context, _ nonce.NonceID) { calls = append(calls, "delete") }).
+		Return(nil).Once()
+
+	require.NoError(t, minter.Revoke(t.Context(), testID, testProject, testName))
+	require.Equal(t, []string{"get", "clear", "delete"}, calls,
+		"the record is the only handle on the key, so it outlives a failed clear")
+}
+
+func TestRevokeKeepsTheRecordWhenTheClearFails(t *testing.T) {
+	t.Parallel()
+
+	minter, store, writer := newMinter(t)
+	clearFailure := errors.New("incus: 503 service unavailable")
+
+	unredeemed := boundRecord()
+	unredeemed.Used = false
+
+	store.EXPECT().Get(mock.Anything, testID).Return(unredeemed, nil).Once()
+	writer.EXPECT().ClearBootstrap(mock.Anything, testProject, testName).Return(clearFailure).Once()
+
+	// No Delete expectation: dropping the record here would strand the secret in
+	// the instance configuration with nothing left to retry against.
+	err := minter.Revoke(t.Context(), testID, testProject, testName)
+	require.ErrorIs(t, err, nonce.ErrWriterUnavailable)
+	require.ErrorIs(t, err, clearFailure)
+}
+
+func TestWithdrawalRefusesAConsumedNonce(t *testing.T) {
+	t.Parallel()
+
+	withdrawals := map[string]func(minter *nonce.Minter) error{
+		"revoke": func(minter *nonce.Minter) error {
+			return minter.Revoke(t.Context(), testID, testProject, testName)
+		},
+		"discard": func(minter *nonce.Minter) error {
+			return minter.Discard(t.Context(), testID)
+		},
+	}
+
+	for name, withdraw := range withdrawals {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			minter, store, _ := newMinter(t)
+			// boundRecord is already consumed: the redemption path owns the
+			// clear for it, so neither a clear nor a delete may happen here.
+			store.EXPECT().Get(mock.Anything, testID).Return(boundRecord(), nil).Once()
+
+			require.ErrorIs(t, withdraw(minter), nonce.ErrNonceAlreadyUsed)
+		})
+	}
+}
+
+func TestWithdrawalReportsAnUnknownNonceAndABrokenStore(t *testing.T) {
+	t.Parallel()
+
+	t.Run("an unknown nonce", func(t *testing.T) {
+		t.Parallel()
+
+		minter, store, _ := newMinter(t)
+		store.EXPECT().Get(mock.Anything, testID).Return(nonce.Record{}, nonce.ErrNonceNotFound).Once()
+
+		err := minter.Revoke(t.Context(), testID, testProject, testName)
+		require.ErrorIs(t, err, nonce.ErrNonceNotFound)
+		require.NotErrorIs(t, err, nonce.ErrStoreUnavailable)
+	})
+
+	t.Run("an empty nonce id", func(t *testing.T) {
+		t.Parallel()
+
+		minter, _, _ := newMinter(t)
+
+		require.ErrorIs(t, minter.Discard(t.Context(), ""), nonce.ErrNonceNotFound)
+	})
+
+	t.Run("a broken store", func(t *testing.T) {
+		t.Parallel()
+
+		minter, store, _ := newMinter(t)
+		store.EXPECT().Get(mock.Anything, testID).Return(nonce.Record{}, errors.New("store: closed")).Once()
+
+		err := minter.Discard(t.Context(), testID)
+		require.ErrorIs(t, err, nonce.ErrStoreUnavailable)
+		require.NotErrorIs(t, err, nonce.ErrNonceNotFound)
+	})
+}
+
+func TestDiscardDropsTheRecordWithoutTouchingTheInstance(t *testing.T) {
+	t.Parallel()
+
+	minter, store, _ := newMinter(t)
+
+	unredeemed := boundRecord()
+	unredeemed.Used = false
+
+	// No writer expectation at all: the instance this nonce was bound to is
+	// gone, so there is no configuration key left to clear.
+	store.EXPECT().Get(mock.Anything, testID).Return(unredeemed, nil).Once()
+	store.EXPECT().Delete(mock.Anything, testID).Return(nil).Once()
+
+	require.NoError(t, minter.Discard(t.Context(), testID))
+}

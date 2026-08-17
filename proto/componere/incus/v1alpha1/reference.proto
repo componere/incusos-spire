@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package componere.incus.v1alpha1;
+
+option go_package = "github.com/componere/incusos-spire/proto/componere/incus/v1alpha1;incusv1alpha1";
+
+// IncusInstanceReference is the broker-submitted workload reference for Incus
+// instance attestation.
+//
+// The resulting type_url is
+// type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference.
+//
+// This message carries CLAIMS, never facts — every selector is read back from
+// Incus by the plugin. Only instance_uuid selects an instance; the remaining
+// fields are equality checks that can only narrow the outcome.
+//
+// Field numbers 1-4 are permanent and new fields append from 5. No field is
+// ever repurposed. v1alpha1 may still break, but only via a new type_url.
+message IncusInstanceReference {
+  // instance_uuid is the SOLE REQUIRED identity anchor. The plugin checks it
+  // against the instance config key volatile.uuid.
+  string instance_uuid = 1;
+
+  // project is an OPTIONAL lookup scope. Empty means the plugin's configured
+  // project. When set, it is checked against the instance record's top-level
+  // project.
+  string project = 2;
+
+  // generation_uuid is an OPTIONAL EXPECTATION. When set, it MUST equal the
+  // live instance config key volatile.uuid.generation or attestation fails.
+  // This is a rollback discriminator — snapshot restore keeps volatile.uuid
+  // and installs a fresh random generation.
+  string generation_uuid = 3;
+
+  // server is an OPTIONAL EXPECTATION. When set, it is checked against the
+  // GET /1.0 endpoint identity (environment.certificate_fingerprint or
+  // environment.server_name). It is NEVER used to select an endpoint.
+  string server = 4;
+}

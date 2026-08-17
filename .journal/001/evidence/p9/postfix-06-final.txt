@@ -1,0 +1,146 @@
+### postfix-06 — close-out and final state
+### 2026-08-17T16:31:35Z
+
+--- 1. delete the registration entries this re-verification ADDED ---
+Both are test workloads, not chain infrastructure. P10 needs the exchange entry and the
+broker-SVID entry; it does not need either demo workload.
+Deleted entry with ID: 9353cac4-9cb0-4de8-974e-66873b2384e2
+
+
+Deleted 1 entries successfullyDeleted entry with ID: fac80b50-71e8-49c1-933f-90aacf7eb1c4
+
+
+Deleted 1 entries successfully
+--- 2. FINAL entry list: exactly the two chain-infrastructure entries ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+--- 3. FINAL node list ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 17:17:58 +0000 UTC
+Serial number     : 142590035732384218146136465849234101008
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 17:30:34 +0000 UTC
+Serial number     : 177415499162134467554338609658284514711
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+--- 4. user.spiffe-bootstrap cleared on EVERY instance in BOTH projects (enumerated) ---
+  spike-broker       (default)      <unset>
+  spike-p3-stage     (default)      <unset>
+  spike-probe        (default)      <unset>
+  spire-agent        (default)      <unset>
+  spire-server       (default)      <unset>
+  spike-authz-probe  (spike-spiffe) <unset>
+  spike-guest-a      (spike-spiffe) <unset>
+  spike-guest-b      (spike-spiffe) <unset>
+
+--- 5. HOST SPIRE agent still attested and healthy ---
+tpm_devid node present in the FINAL node list above (expiry 2026-08-17 17:17:58 UTC).
+health endpoints, probed over HTTP from spike-probe (the agent image has no shell):
+  /live -> HTTP 200
+  /ready -> HTTP 200
+
+--- 6. broker still running the NEW binary ---
+active
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+LISTEN 0      4096               *:8443            *:*   
+
+--- 7. guest A: agent running, Workload API serving, exchange material gone ---
+   2264 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+spike-exchange mounts: 0
+
+--- 8. all instances still RUNNING; nothing deleted ---
+spike-broker,RUNNING
+spike-p3-stage,RUNNING
+spike-probe,RUNNING
+spire-agent,RUNNING
+spire-server,RUNNING
+spike-authz-probe,RUNNING
+spike-guest-a,RUNNING
+spike-guest-b,RUNNING
+
+--- 9. HOST UNTOUCHED (five non-secret fields only; the recovery-key fields in this
+--- 9. HOST UNTOUCHED ---
+Five non-secret fields extracted from /os/1.0/system/security. That response ALSO carries
+drive_recovery_keys, pool_recovery_keys and encryption_recovery_keys_retrieved; those were
+never written to any file in this directory.
+{"secure_boot_enabled":true,"encrypted_volumes":[{"state":"unlocked (TPM)","volume":"root"},{"state":"unlocked (TPM)","volume":"swap"}],"tpm_status":"ok","system_state_status":"system state is fully trusted","system_state_is_trusted":true}
+{"os_name":"IncusOS","os_version":"202608102114","kernel_version":null,"server_version":null}
+
+The host has NOT rebooted during this re-verification: the tpm_devid node's attestation
+predates it (expiry 17:17:58, issued ~16:17) and every host container kept its uptime.
+spike-probe container uptime_seconds: 64505.15
+
+No TPM command was run. No 'incus admin os' mutation. The host was not rebooted.
+No change to the code worktree, no repository gate, no Git command.
+
+======================================================================
+--- 10. FINAL STATE RE-CONFIRMED after the secret-scan positive controls
+---     (postfix-07 minted and consumed two more nonces, so this is the true end state)
+======================================================================
+2026-08-17T16:36:46Z
+
+registration entries:
+  Found 2 entries
+  Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+  SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+  Entry ID                : 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0
+  SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+
+attested nodes:
+  Found 2 attested agents:
+  SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+  Attestation type  : tpm_devid
+  SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+  Attestation type  : x509pop
+
+guest A:
+     2650 spire-agent run -config /run/spike-p9/agent.conf
+  Agent is healthy.
+  spike-exchange mounts: 0
+
+user.spiffe-bootstrap, all instances:
+  spike-broker       (default)      <unset>
+  spike-p3-stage     (default)      <unset>
+  spike-probe        (default)      <unset>
+  spire-agent        (default)      <unset>
+  spire-server       (default)      <unset>
+  spike-authz-probe  (spike-spiffe) <unset>
+  spike-guest-a      (spike-spiffe) <unset>
+  spike-guest-b      (spike-spiffe) <unset>
+
+broker:
+  active
+  4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+
+host agent:
+  /live -> HTTP 200
+  /ready -> HTTP 200
+
+host security state:
+  {"secure_boot_enabled":true,"encrypted_volumes":[{"state":"unlocked (TPM)","volume":"root"},{"state":"unlocked (TPM)","volume":"swap"}],"tpm_status":"ok","system_state_status":"system state is fully trusted","system_state_is_trusted":true}

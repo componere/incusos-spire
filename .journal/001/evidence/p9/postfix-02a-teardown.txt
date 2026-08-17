@@ -1,0 +1,52 @@
+### postfix-02a — tearing the guest node down so the chain is proven FROM NOTHING
+### 2026-08-17T16:24:03Z
+
+--- 1. stop the guest agent that the ORIGINAL P9 run left attested ---
+
+--- 2. remove the agent's persistent data_dir (public material only: agent-data.json, bundle.pem) ---
+ls: cannot access '/var/lib/spire-agent': No such file or directory
+/var/lib/spire-agent: gone
+
+--- 3. EVICT the guest node from the server ---
+WHY evict, not ban: 'ban' would blacklist the agent SPIFFE ID and refuse all future
+attestation, which would make the clean re-run impossible. 'evict' deletes the attested
+node record, so the server no longer knows this node and the next attestation is a FIRST
+attestation, not a re-attestation. The node identity that comes back is byte-identical
+because x509pop derives it from the exchange SVID's SPIFFE ID, which the broker derives
+from the instance UUID -- a955ca30-... is a property of the Incus instance, not of any
+credential. So a stable ID here is evidence the derivation is deterministic, not evidence
+that the old node survived.
+Agent evicted successfully
+
+--- 4. server now knows ONE node: the physically attested host ---
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 17:17:58 +0000 UTC
+Serial number     : 142590035732384218146136465849234101008
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+--- 5. registration entries retained (chain infrastructure, not test artifacts) ---
+Found 2 entries
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Selector                : unix:uid:0
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- 6. guest A holds no SPIRE material at all ---
+ls: cannot access '/var/lib/spire-agent': No such file or directory
+ls: cannot access '/run/spike-p9': No such file or directory
+/run/spike-exchange:
+total 0
+drwx------  2 root root  40 Aug 17 15:40 .
+drwxr-xr-x 22 root root 500 Aug 17 16:24 ..
+---
+0
+
+--- 7. user.spiffe-bootstrap clear before we start ---
+<unset>

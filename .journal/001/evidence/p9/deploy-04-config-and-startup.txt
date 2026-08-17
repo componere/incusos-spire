@@ -1,0 +1,36 @@
+### FINAL /state/broker.env (paths only; no secret value is stored in it)
+INCUS_SPIFFE_BROKER_LISTEN=:8443
+INCUS_SPIFFE_BROKER_TLS_CERT=/state/tls/broker.crt
+INCUS_SPIFFE_BROKER_TLS_KEY=/state/tls/broker.key
+INCUS_SPIFFE_BROKER_ADVERTISE_URL=https://10.55.156.44:8443
+INCUS_SPIFFE_BROKER_INCUS_URL=https://147.135.105.83:8443
+INCUS_SPIFFE_BROKER_INCUS_SERVER_FINGERPRINT=822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd
+INCUS_SPIFFE_BROKER_ATTESTOR_CERT=/state/incus/attestor.crt
+INCUS_SPIFFE_BROKER_ATTESTOR_KEY=/state/incus/attestor.key
+INCUS_SPIFFE_BROKER_BOOTSTRAP_CERT=/state/incus/bootstrap.crt
+INCUS_SPIFFE_BROKER_BOOTSTRAP_KEY=/state/incus/bootstrap.key
+INCUS_SPIFFE_BROKER_PROJECT=spike-spiffe
+INCUS_SPIFFE_BROKER_MINT_TOKEN_FILE=/state/auth/mint-token
+INCUS_SPIFFE_BROKER_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_MAX_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_REAP_INTERVAL=1m
+INCUS_SPIFFE_BROKER_REAP_TIMEOUT=30s
+INCUS_SPIFFE_BROKER_REAP_GRACE=2m
+INCUS_SPIFFE_BROKER_REQUEST_TIMEOUT=10s
+INCUS_SPIFFE_BROKER_BROKER_SOCKET=/hostagent/broker-run/broker.sock
+INCUS_SPIFFE_BROKER_WORKLOAD_API_SOCKET=/hostagent/wlapi-relay.sock
+INCUS_SPIFFE_BROKER_AGENT_SPIFFE_ID=spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+
+### service state
+active
+
+### startup log — the three new fields are broker_socket, workload_api_socket, and the
+### authorized agent identity (agent_spiffe_id is config, not logged; see broker.env above)
+{"time":"2026-08-17T15:33:59.934963011Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","broker_socket":"/hostagent/broker-run/broker.sock","workload_api_socket":"/hostagent/wlapi-relay.sock","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+{"time":"2026-08-17T15:33:59.935155512Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+
+### listener
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=922,fd=6)) 
+
+### the broker now holds an SVID of its own, fetched from the host agent's Workload API
+[37mDEBU[0m[47431] Fetched X.509 SVID                            [37mcount[0m=1 [37mmethod[0m=FetchX509SVID [37mpid[0m=222 [37mregistered[0m=true [37mservice[0m=WorkloadAPI [37mspiffe_id[0m="spiffe://spike.incus.internal/incus-broker" [37msubsystem_name[0m=endpoints [37mttl[0m=3329.066470374

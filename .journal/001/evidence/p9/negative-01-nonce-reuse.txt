@@ -1,0 +1,42 @@
+### N1 — nonce reuse: the same nonce, twice
+2026-08-17T15:43:03Z
+--- stop the agent left running by the reboot recovery, so this run starts clean ---
+no spire-agent process
+
+--- mint, then preserve the payload in the guest BEFORE redeeming it (mode 0600, never printed) ---
+RESULT mint outcome=minted status=201 nonce_id=32da6e45d001c7ad3e023797019936a9 expires_at=2026-08-17T15:53:06.639310388Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+-rw------- 1 root root 267 Aug 17 15:43 /run/p9-payload.json
+payload sha256: 87e4641ba6a8d4ae6937e72e423af78ca712b175c82d69af8c90b2308cbb903f
+
+--- redemption 1 of 2: expected PASS ---
+redeem: HTTP 200
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=32da6e45d001c7ad3e023797019936a9 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 15:44:49 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_material=shredded-and-unmounted
+
+--- redemption 2 of 2: same nonce, replayed from the preserved payload ---
+exchange: /run/spike-exchange-replay is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+source: staged payload /run/p9-payload.json (the guest socket was not read)
+payload: nonce_id=32da6e45d001c7ad3e023797019936a9
+payload: sha256=87e4641ba6a8d4ae6937e72e423af78ca712b175c82d69af8c90b2308cbb903f
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=32da6e45d001c7ad3e023797019936a9
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 409
+verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+         forbids redemption: already consumed, expired, bound to another instance, or the
+         generation moved. On a reboot this is the expected answer for a stale key: P9
+         needs a FRESH nonce per bootstrap.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=32da6e45d001c7ad3e023797019936a9 broker_reason=conflict
+exchange: material shredded and /run/spike-exchange-replay unmounted (memory-only, single-use, short-lived)
+replay rc=11
+
+--- broker's view of the replay ---
+{"time":"2026-08-17T15:43:10.263237877Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"32da6e45d001c7ad3e023797019936a9","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:35382","http_status":409,"code":"conflict","reason":"nonce: consume nonce 32da6e45d001c7ad3e023797019936a9: nonce: nonce already used: id 32da6e45d001c7ad3e023797019936a9"}
+--- shred the preserved payload; it holds a nonce ---
+ls: cannot access '/run/p9-payload.json': No such file or directory
+payload file removed

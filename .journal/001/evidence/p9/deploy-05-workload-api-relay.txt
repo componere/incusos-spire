@@ -1,0 +1,40 @@
+### The problem: the broker's own SVID source
+The redeployed broker requires -workload-api-socket, its OWN SVID source. The host
+agent's Workload API socket is on the shared volume and therefore reachable by path,
+but P4 and P7 already established that reachability is not sufficient: the SPIRE
+endpoint resolves the caller through SO_PEERCRED in its own PID namespace, and a peer
+in a sibling container is unresolvable. Observed again here, verbatim from the host
+agent log while the broker pointed straight at /hostagent/run/api.sock:
+
+WARN[47291] Connection failed during accept  error="could not resolve caller information" subsystem_name=endpoints
+WARN[47316] Connection failed during accept  error="could not resolve caller information" subsystem_name=endpoints
+WARN[47317] Connection failed during accept  error="could not resolve caller information" subsystem_name=endpoints
+
+### Rejected workaround: Incus proxy device (bind=host, unix->unix)
+$ incus config device add spire-agent wlapiproxy proxy bind=host \
+    listen=unix:/var/lib/incus/storage-pools/local/custom/default_spike-spire-agent-state/wlapi-proxy.sock \
+    connect=unix:/spike/run/api.sock mode=0666
+Device wlapiproxy added to spire-agent
+The socket appeared on the shared volume, but forkproxy's connect side does not enter
+the instance PID namespace, so the agent produced the same accept failure. Device removed.
+
+### Accepted workaround: a byte relay running INSIDE the agent's PID namespace
+5aa746a2a4406626f3657d9c1d880fc81cacad93ba977367dadd38ddbd817e43  /state/bin/p9-wlapi-relay
+$ incus exec spire-agent -- /spike/bin/p9-wlapi-relay /spike/wlapi-relay.sock /spike/run/api.sock
+srw-rw-rw- 1 root root 0 Aug 17 15:33 /hostagent/wlapi-relay.sock
+
+### Proof it worked: the agent attested the relay and issued the broker identity
+DEBU[47431] Fetched X.509 SVID  count=1 method=FetchX509SVID pid=222 registered=true \
+  service=WorkloadAPI spiffe_id="spiffe://spike.incus.internal/incus-broker" \
+  subsystem_name=endpoints ttl=3329.066470374
+(captured in deploy-04-config-and-startup.txt; pid=222 is the relay, resolvable because it
+ lives in the agent's own PID namespace. uid 0 there matched the unix:uid:0 entry.)
+
+### Security consequence, recorded rather than mitigated
+Any process that can reach /spike/wlapi-relay.sock — i.e. any container that mounts the
+spike-spire-agent-state volume — now obtains spiffe://spike.incus.internal/incus-broker
+from the host agent, because every caller is attested as the relay. The relay collapses
+the Workload API's caller attestation to a single identity. It is spike scaffolding for
+one live run, it is listed in the teardown inventory, and a production design must not
+ship it: the broker must either run in the agent's PID namespace or receive its SVID
+through an attested channel of its own.

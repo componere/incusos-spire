@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial) · P6 (schema frozen) · **P7 / H6 PROVEN** · **P8 / H7 PROVEN 2026-08-16** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md), [`p8`](evidence/p8/EVIDENCE.md) + [`guest brief`](evidence/p8/GUEST_SOCK_BRIEF.md) + [`security`](evidence/p8/SECURITY_FINDINGS.md)
+**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial) · P6 (schema frozen) · **P7 / H6 PROVEN** · **P8 / H7 PROVEN** · **P9 / H8 PROVEN 2026-08-17** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md), [`p8`](evidence/p8/EVIDENCE.md) + [`guest brief`](evidence/p8/GUEST_SOCK_BRIEF.md) + [`security`](evidence/p8/SECURITY_FINDINGS.md), [`p9`](evidence/p9/EVIDENCE.md) + [`x509pop`](evidence/p9/X509POP_BRIEF.md) + [`security`](evidence/p9/SECURITY_FINDINGS.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -417,6 +417,12 @@ Recorded objects (append at creation time):
 | 4 | `spike-broker` container + volume `spike-broker-state` (holds the operator mint token and broker TLS key) | P8 | **Left running** for P9; delete with the volume |
 | 3 | `user.spiffe-bootstrap` on any instance | P8 | Verified clear on both guests; the reaper now withdraws expired keys automatically |
 | — | Durable code `691c51c`, `5a9bee7`, `ade77d8` on `feat/incus-attestor` | P8 | Product code, not teardown |
+| 2 | Attested guest node `x509pop/incus/a955ca30-…` in `spike-guest-a` | P9 | **Left attested** for P10; `spire-server agent evict` (never `ban`, which blocks re-attestation) |
+| 2 | Registration entry `spire-exchange/incus/a955ca30-…`, parented to the TPM host node | P9 | **Left live** for P10; delete with the guest node |
+| 3 | Guest agent state in `spike-guest-a` (`spire-agent` 1.15.2 binary, data dir, `agent.conf`) | P9 | Persists into P10; guest is deleted whole in P11 |
+| — | Test workload entries `/guest/demo` and `/guest/demo-app` (`unix:uid:0`, `unix:uid:989`) | P9 | Deleted in-phase; `Found 2 entries` verified |
+| — | Broker binary redeployed at sha256 `4ed87f92…fa45` (was `bd46b32d…4728`) | P9 | Supersedes the P8 deployment; same container and volume |
+| — | Durable code `609885e`, `3f5b7f6` on `feat/incus-attestor` | P9 | Product code, not teardown |
 
 ## Appendix F — Primary References
 

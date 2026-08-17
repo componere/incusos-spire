@@ -1,0 +1,31 @@
+### spire-server agent list — TWO nodes now
+2026-08-17T15:37:03Z
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 16:21:30 +0000 UTC
+Serial number     : 273237934997501857321960965805831416060
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 16:36:54 +0000 UTC
+Serial number     : 55471780154767017824403708461347122729
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+### the guest node's x509pop selectors, as produced by the server
+Found an attested agent given its SPIFFE ID
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 16:36:54 +0000 UTC
+Serial number     : 55471780154767017824403708461347122729
+Can re-attest     : true
+Agent version     : 1.15.2
+
+Selectors         : x509pop:ca:fingerprint:ef7e6ffe03011a50e1278bdcb4fdd7dc549dedb4
+Selectors         : x509pop:serialnumber:829f56c0096743522e41b6381a1b70b5

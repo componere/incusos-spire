@@ -1,0 +1,61 @@
+### an in-guest application fetching its identity from the guest's OWN Workload API
+### (first attempt at 15:38:20 returned PermissionDenied: the entry had not yet
+###  propagated to the guest agent's cache. Retried after the sync interval.)
+2026-08-17T15:38:48Z
+workdir: /run/spike-workload-check fstype=tmpfs mode=0700
+health: Checking agent health...
+health: Agent is healthy.
+fetch[first]: Received 1 svid after 1.464671ms
+fetch[first]: 
+fetch[first]: SPIFFE ID:		spiffe://spike.incus.internal/guest/demo
+fetch[first]: SVID Valid After:	2026-08-17 15:38:12 +0000 UTC
+fetch[first]: SVID Valid Until:	2026-08-17 15:40:22 +0000 UTC
+fetch[first]: CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+fetch[first]: CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+fetch[first]: CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+fetch[first]: CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+fetch[first]: 
+fetch[first]: Writing SVID #0 to file /run/spike-workload-check/first/svid.0.pem.
+fetch[first]: Writing key #0 to file /run/spike-workload-check/first/svid.0.key.
+fetch[first]: Writing bundle #0 to file /run/spike-workload-check/first/bundle.0.pem.
+svid[first]: spiffe_id=spiffe://spike.incus.internal/guest/demo
+svid[first]: serial=CB2E3624BC367E536816DAAD97E218C9 not_before=Aug 17 15:38:12 2026 GMT not_after=Aug 17 15:40:22 2026 GMT
+svid[first]: bundle_certs=2 key=<shredded, never printed>
+issuance: expected_spiffe_id=spiffe://spike.incus.internal/guest/demo
+RESULT check=issuance outcome=PASS spiffe_id=spiffe://spike.incus.internal/guest/demo serial=CB2E3624BC367E536816DAAD97E218C9 not_before=Aug 17 15:38:12 2026 GMT not_after=Aug 17 15:40:22 2026 GMT
+rotation: svid_lifetime_seconds=130 renewal_point_in=32s wait_seconds=62 grace=30s min_observation=45s poll_interval=15s
+fetch[poll]: Received 1 svid after 1.430372ms
+fetch[poll]: 
+fetch[poll]: SPIFFE ID:		spiffe://spike.incus.internal/guest/demo
+fetch[poll]: SVID Valid After:	2026-08-17 15:38:12 +0000 UTC
+fetch[poll]: SVID Valid Until:	2026-08-17 15:40:22 +0000 UTC
+fetch[poll]: CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+fetch[poll]: CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+fetch[poll]: CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+fetch[poll]: CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+fetch[poll]: 
+fetch[poll]: Writing SVID #0 to file /run/spike-workload-check/poll/svid.0.pem.
+fetch[poll]: Writing key #0 to file /run/spike-workload-check/poll/svid.0.key.
+fetch[poll]: Writing bundle #0 to file /run/spike-workload-check/poll/bundle.0.pem.
+svid[poll]: spiffe_id=spiffe://spike.incus.internal/guest/demo
+svid[poll]: serial=CB2E3624BC367E536816DAAD97E218C9 not_before=Aug 17 15:38:12 2026 GMT not_after=Aug 17 15:40:22 2026 GMT
+svid[poll]: bundle_certs=2 key=<shredded, never printed>
+fetch[poll]: Received 1 svid after 1.499241ms
+fetch[poll]: 
+fetch[poll]: SPIFFE ID:		spiffe://spike.incus.internal/guest/demo
+fetch[poll]: SVID Valid After:	2026-08-17 15:39:06 +0000 UTC
+fetch[poll]: SVID Valid Until:	2026-08-17 15:41:16 +0000 UTC
+fetch[poll]: CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+fetch[poll]: CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+fetch[poll]: CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+fetch[poll]: CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+fetch[poll]: 
+fetch[poll]: Writing SVID #0 to file /run/spike-workload-check/poll/svid.0.pem.
+fetch[poll]: Writing key #0 to file /run/spike-workload-check/poll/svid.0.key.
+fetch[poll]: Writing bundle #0 to file /run/spike-workload-check/poll/bundle.0.pem.
+svid[poll]: spiffe_id=spiffe://spike.incus.internal/guest/demo
+svid[poll]: serial=1BA4352E183EF8856537047E0205CF25 not_before=Aug 17 15:39:06 2026 GMT not_after=Aug 17 15:41:16 2026 GMT
+svid[poll]: bundle_certs=2 key=<shredded, never printed>
+RESULT check=rotation outcome=PASS mode=poll first_serial=CB2E3624BC367E536816DAAD97E218C9 second_serial=1BA4352E183EF8856537047E0205CF25 waited_seconds=30 spiffe_id=spiffe://spike.incus.internal/guest/demo
+RESULT check=workload outcome=PASS spiffe_id=spiffe://spike.incus.internal/guest/demo socket=/tmp/spire-agent/public/api.sock first_serial=CB2E3624BC367E536816DAAD97E218C9 second_serial=1BA4352E183EF8856537047E0205CF25 rotation=observed mode=poll material=shredded-and-unmounted
+workload-check rc=0

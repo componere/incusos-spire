@@ -1,0 +1,47 @@
+### fresh nonce (the previous one was consumed by the field-name run)
+2026-08-17T15:36:52Z
+mint: HTTP 201
+RESULT mint outcome=minted status=201 nonce_id=dd161c4f08ba9658ef1ba267affd7c0f expires_at=2026-08-17T15:46:53.078073137Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+### guest-agent-bootstrap.sh, with the broker's actual field names supplied explicitly
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=dd161c4f08ba9658ef1ba267affd7c0f
+payload: sha256=9ad4b5c0faa63209600b9b7dd47bb0f28a9941e716a595493a5126cd42a334b7
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=dd161c4f08ba9658ef1ba267affd7c0f
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:c32efc7b-f3d8-4637-9818-f8906c35543a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+exchange: private key parses and matches the certificate (public-key digests equal)
+exchange: certificate_path=/run/spike-exchange/svid.pem chain_certs=1 (leaf first; x509pop accepts leaf+intermediates in one file)
+exchange: private_key_path=/run/spike-exchange/svid.key mode=0600 (memory-backed, never persisted)
+exchange: trust_bundle_path=/run/spike-exchange/bundle.pem bundle_certs=2
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+exchange: serial=829F56C0096743522E41B6381A1B70B5 not_before=Aug 17 15:35:55 2026 GMT not_after=Aug 17 15:38:05 2026 GMT
+exchange: expected_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: trust bundle persisted to /var/lib/spire-agent/bundle.pem (public material, Appendix D rule 3) so the agent can be restarted
+agent: rendered /run/spike-p9/agent.conf from /root/p9/agent.conf.template
+agent: trust_domain=spike.incus.internal server=10.55.156.67:8081 data_dir=/var/lib/spire-agent
+agent: socket_path=/tmp/spire-agent/public/api.sock key_manager=memory trust_bundle_path=/var/lib/spire-agent/bundle.pem
+agent: spire-agent validate -config accepted the rendered configuration
+agent: started spire-agent run -config /run/spike-p9/agent.conf pid=1217 log=/run/spike-p9/spire-agent.log
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: healthcheck ready on /tmp/spire-agent/public/api.sock (standard Workload API is serving)
+agent: expected_node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+exchange: material shredded and /run/spike-exchange unmounted (memory-only, single-use, short-lived)
+note: the exchange credential is gone and the agent keeps running on the node SVID it obtained.
+note: a restart or reboot therefore needs a FRESH nonce and a new exchange SVID — that is the
+      P9 step-4 re-attestation story, chosen rather than discovered. AGENT_KEY_MANAGER=memory.
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=dd161c4f08ba9658ef1ba267affd7c0f instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 15:38:05 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_material=shredded-and-unmounted
+bootstrap rc=0

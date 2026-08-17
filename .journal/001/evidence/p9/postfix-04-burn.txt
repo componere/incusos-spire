@@ -1,0 +1,109 @@
+### postfix-04 — the burned-nonce contract, proven deliberately
+### 2026-08-17T16:27:15Z
+
+WHY: EVIDENCE.md recorded outcome=burned only as a MEASURED accident (guest B, finding F3),
+before the fix that names the condition to the caller. The fixed broker returns a specific
+error code for it. This forces the condition on purpose, on guest A, and then proves the
+nonce really was spent.
+
+LEVER CHOSEN: temporarily delete the exchange registration entry. The broker's Broker API
+call then reaches a healthy host agent, the host agent re-derives incus:uuid:a955ca30-...,
+the server finds NO entry matching it, and returns an empty SVID list. This is the cleanest
+lever because it leaves the broker binary, its configuration, its TLS identity and the
+Broker API socket completely untouched -- only one server-side record moves, and it is
+restored verbatim afterwards. Pointing the broker at a bogus socket path would also work
+but would require editing /state/broker.env and restarting the service.
+
+--- 1. the exchange entry as it stands, recorded so it can be restored verbatim ---
+Found 1 entry
+Entry ID                : 70a95e01-b401-4837-a963-c391aa61d8ff
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+--- 2. delete it ---
+Deleted entry with ID: 70a95e01-b401-4837-a963-c391aa61d8ff
+
+
+Deleted 1 entries successfully
+--- 3. confirm it is gone ---
+spire-exchange entries remaining: 0
+
+--- 4. mint a fresh nonce for guest A ---
+  nonce_id=dbb0096ee125b97b40168e7981b3b3ff
+RESULT mint outcome=minted status=201 nonce_id=dbb0096ee125b97b40168e7981b3b3ff expires_at=2026-08-17T16:37:25.387736937Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+--- 5. preserve the payload in a mode-0600 file BEFORE redeeming, so the same nonce can be
+---    replayed after the broker clears user.spiffe-bootstrap. Never printed. ---
+socket_read=200 bytes=267 nonce_id=dbb0096ee125b97b40168e7981b3b3ff
+
+--- 6. redeem. The nonce is piped from jq into curl's stdin; it never reaches argv.
+---    The response body is printed ONLY when the status is non-2xx -- a 200 body would
+---    carry the exchange PRIVATE KEY, and Appendix D forbids capturing it. ---
+HTTP 503
+--- VERBATIM RESPONSE BODY ---
+{"error":"nonce_consumed_without_svid"}
+
+--- end ---
+
+--- 7. the broker log line for that redemption ---
+{"time":"2026-08-17T16:27:25.402298511Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"dbb0096ee125b97b40168e7981b3b3ff","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","expires_at":"2026-08-17T16:37:25.387736937Z"}
+{"time":"2026-08-17T16:27:40.870382663Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"dbb0096ee125b97b40168e7981b3b3ff","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+{"time":"2026-08-17T16:27:40.878878739Z","level":"ERROR","msg":"nonce consumed but no exchange SVID was issued","operation":"redeem","outcome":"burned","nonce_id":"dbb0096ee125b97b40168e7981b3b3ff","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe","failure_class":"broker_no_svid","peer_address":"10.55.156.150:37912","http_status":503,"code":"nonce_consumed_without_svid","reason":"broker delivered no X.509-SVID: response carried an empty SVID list"}
+
+--- 8. and the guest's bootstrap key is gone: the nonce was CONSUMED, not rolled back ---
+<unset>
+
+--- 9. restore the exchange entry, verbatim shape (new entry ID: the record is recreated) ---
+Entry ID                : 655e2c68-0a1f-423b-8cbd-bc6c7fc060c0
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+--- 10. REPLAY the burned nonce, with the working configuration restored ---
+---     If the burn had rolled the nonce back, this would now succeed. It must not. ---
+HTTP 409
+--- VERBATIM RESPONSE BODY ---
+{"error":"conflict"}
+
+--- end ---
+ls: cannot access '/run/p9burn.json': No such file or directory
+preserved payload shredded
+
+======================================================================
+THE CONTRAST, WHICH IS THE WHOLE POINT
+======================================================================
+redemption that burned the nonce   HTTP 503  {"error":"nonce_consumed_without_svid"}
+replay of that same nonce          HTTP 409  {"error":"conflict"}
+
+Two different codes for two different facts. The 503 says 'your nonce is spent and you got
+nothing for it -- go get a fresh one', which is actionable. The 409 is the ordinary
+single-use conflict and is unchanged from the pre-fix broker: the burn code does NOT leak
+into the replay path, so a caller cannot use it to probe whether a nonce was burned or
+merely reused.
+
+The log line carries everything an operator needs to reconcile it:
+  outcome=burned  nonce_id=dbb0096ee125b97b40168e7981b3b3ff
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  failure_class=broker_no_svid  http_status=503  code=nonce_consumed_without_svid
+  level=ERROR
+
+CHANGE VISIBLE AGAINST THE OLD BINARY: the same condition on the pre-fix broker logged
+code="unavailable" (see EVIDENCE.md N3 / negative-02-guest-b.txt, and the 15:43:45 line
+still in the journal). It now logs code="nonce_consumed_without_svid", matching the body.
+The HTTP status class is preserved: 503 for this dependency failure, not a new status.
+
+--- 11. everything restored; the clean path re-verified in postfix-05 (the shred run) ---
+Found 4 entries
+SPIFFE ID               : spiffe://spike.incus.internal/guest/demo
+SPIFFE ID               : spiffe://spike.incus.internal/guest/demo-app
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a

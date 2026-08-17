@@ -1,0 +1,11 @@
+### 1. pre-state
+2026-08-17T15:27:47Z
+c534af07c95ef333b1a09dabb75367c6f66ab5cc01b1b178dc6f81ee89afa741  /usr/local/bin/incus-spiffe-broker
+active
+### 2. stop service
+inactive
+### 3. operator-side binary digest
+bd46b32d3c0b71c4f49cec8aeeb57ade8d4fb2cf132c3993d72c4745b1e04728  /tmp/incus-spiffe-broker-linux
+### 4. push binary (incus file push progress lines removed for readability)
+### 5. in-container digest
+bd46b32d3c0b71c4f49cec8aeeb57ade8d4fb2cf132c3993d72c4745b1e04728  /usr/local/bin/incus-spiffe-broker

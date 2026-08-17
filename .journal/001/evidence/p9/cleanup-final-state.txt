@@ -1,0 +1,125 @@
+### Cleanup and final state
+2026-08-17T15:44:22Z
+
+--- delete the test workload entry (spiffe://…/guest/demo). The exchange entry and the
+--- broker-SVID entry are chain infrastructure, deliberately RETAINED for P10; both are
+--- added to the teardown inventory instead.
+Deleted entry with ID: 329f6690-12fa-4e16-a1d0-32db8f50cd11
+
+
+Deleted 1 entries successfully
+--- entries that remain ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+X509-SVID TTL           : 3600
+Selector                : unix:uid:0
+Entry ID                : 70a95e01-b401-4837-a963-c391aa61d8ff
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+X509-SVID TTL           : 120
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- user.spiffe-bootstrap cleared on every instance in both projects ---
+  spike-broker       (default)      user.spiffe-bootstrap=<unset>
+  spike-p3-stage     (default)      user.spiffe-bootstrap=<unset>
+  spike-probe        (default)      user.spiffe-bootstrap=<unset>
+  spire-agent        (default)      user.spiffe-bootstrap=<unset>
+  spire-server       (default)      user.spiffe-bootstrap=<unset>
+  spike-authz-probe  (spike-spiffe) user.spiffe-bootstrap=<unset>
+  spike-guest-a      (spike-spiffe) user.spiffe-bootstrap=<unset>
+  spike-guest-b      (spike-spiffe) user.spiffe-bootstrap=<unset>
+
+--- both nodes still attested; the guest node is LEFT attested for P10 (adversarial matrix) ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 16:21:30 +0000 UTC
+Serial number     : 273237934997501857321960965805831416060
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 16:43:08 +0000 UTC
+Serial number     : 172211805232942846297129293632736476483
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+--- guest A: agent running, Workload API serving ---
+1160 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+
+--- host agent health, probed over HTTP from spike-probe (the agent image has no shell) ---
+  /live -> HTTP 200
+  /ready -> HTTP 200
+
+--- broker still running ---
+active
+LISTEN 0      4096               *:8443            *:*   
+
+--- instances: both guests and the broker up, nothing deleted ---
+      NAME        STATE           IPV4         
+ spike-broker    RUNNING  10.55.156.44 (eth0)  
+ spike-p3-stage  RUNNING  10.55.156.36 (eth0)  
+ spike-probe     RUNNING  10.55.156.233 (eth0) 
+ spire-agent     RUNNING  10.55.156.104 (eth0) 
+ spire-server    RUNNING  10.55.156.67 (eth0)  
+       NAME          STATE            IPV4          
+ spike-authz-probe  RUNNING  10.55.156.248 (eth0)   
+ spike-guest-a      RUNNING  10.55.156.150 (enp5s0) 
+ spike-guest-b      RUNNING  10.55.156.75 (enp5s0)  
+
+--- host security state, non-secret fields only ---
+(the same response also carries drive_recovery_keys, pool_recovery_keys and
+ config.encryption_recovery_keys; those fields were never read into this transcript)
+{"secure_boot_enabled":true,"encrypted_volumes":[{"state":"unlocked (TPM)","volume":"root"},{"state":"unlocked (TPM)","volume":"swap"}],"tpm_status":"ok","system_state_status":"system state is fully trusted","system_state_is_trusted":true}
+
+--- host has not rebooted; uptime spans the whole spike ---
+{"os_name":"IncusOS","os_version":"202608102114","system_is_ready":true,"uptime_seconds":61683}
+
+No TPM command was run, no reboot of the host, no incus admin os mutation, no change to
+the code worktree, no repository gate, no Git command.
+
+=== post-scan re-verification — 2026-08-17T15:52:23Z ===
+(the secret scan minted two control nonces and redeemed one; this confirms the
+ final state is unchanged by it)
+
+Found 2 attested agents:
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+
+Found 2 entries
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+
+  spike-broker       (default)      user.spiffe-bootstrap=<unset>
+  spike-p3-stage     (default)      user.spiffe-bootstrap=<unset>
+  spike-probe        (default)      user.spiffe-bootstrap=<unset>
+  spire-agent        (default)      user.spiffe-bootstrap=<unset>
+  spire-server       (default)      user.spiffe-bootstrap=<unset>
+  spike-authz-probe  (spike-spiffe) user.spiffe-bootstrap=<unset>
+  spike-guest-a      (spike-spiffe) user.spiffe-bootstrap=<unset>
+  spike-guest-b      (spike-spiffe) user.spiffe-bootstrap=<unset>
+
+guest A agent + Workload API:
+  1160 spire-agent run -config /run/spike-p9/agent.conf
+  Agent is healthy.
+guest A leftovers (scan control removed):
+  p9
+    no scan tmpfs
+
+host agent health from spike-probe:
+  /live -> HTTP 200
+  /ready -> HTTP 200
+broker: active
+relay in spire-agent container: socket present
+{"secure_boot_enabled":true,"tpm_status":"ok","system_state_is_trusted":true}
+{"os_version":"202608102114","uptime_seconds":62143}

@@ -1,0 +1,127 @@
+### postfix-03 — Workload API proven for BOTH root and a non-root application
+### 2026-08-17T16:25:02Z
+
+WHY: the original run proved issuance only for uid 0. The security review's point is that
+'an in-guest APPLICATION obtains its SVID from a standard local Workload API' is not
+established by a root fetch: root can traverse any directory and is the same uid that
+created the socket. A non-root fetch is the actual claim.
+
+--- 1. create the unprivileged account (system user, no home, no shell) ---
+uid=989(spike-workload) gid=989(spike-workload) groups=989(spike-workload)
+resolved uid=989
+
+--- 2. TWO registration entries, both parented on the GUEST NODE (not on the host) ---
+    root entry:     unix:uid:0        -> /guest/demo
+    non-root entry: unix:uid:989  -> /guest/demo-app
+Entry ID                : 9353cac4-9cb0-4de8-974e-66873b2384e2
+SPIFFE ID               : spiffe://spike.incus.internal/guest/demo
+Parent ID               : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : fac80b50-71e8-49c1-933f-90aacf7eb1c4
+SPIFFE ID               : spiffe://spike.incus.internal/guest/demo-app
+Parent ID               : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : unix:uid:989
+
+
+--- 3. wait for entry propagation (45s; the original run hit PermissionDenied at 28s, finding 7) ---
+
+--- 4. guest-workload-check.sh, which now runs BOTH fetches ---
+$ incus exec spike-guest-a --project spike-spiffe -- env \
+    NONROOT_USER=spike-workload \
+    NONROOT_EXPECTED_SPIFFE_ID=spiffe://spike.incus.internal/guest/demo-app \
+    /root/p9/guest-workload-check.sh spiffe://spike.incus.internal/guest/demo
+
+workdir: /run/spike-workload-check fstype=tmpfs mode=0700
+health: Checking agent health...
+health: Agent is healthy.
+fetch[first]: Received 1 svid after 1.494221ms
+fetch[first]: 
+fetch[first]: SPIFFE ID:		spiffe://spike.incus.internal/guest/demo
+fetch[first]: SVID Valid After:	2026-08-17 16:24:56 +0000 UTC
+fetch[first]: SVID Valid Until:	2026-08-17 16:27:06 +0000 UTC
+fetch[first]: CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+fetch[first]: CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+fetch[first]: CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+fetch[first]: CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+fetch[first]: 
+fetch[first]: Writing SVID #0 to file /run/spike-workload-check/first/svid.0.pem.
+fetch[first]: Writing key #0 to file /run/spike-workload-check/first/svid.0.key.
+fetch[first]: Writing bundle #0 to file /run/spike-workload-check/first/bundle.0.pem.
+svid[first]: spiffe_id=spiffe://spike.incus.internal/guest/demo
+svid[first]: serial=6E7977601C28A503CEF5D00AD555FA90 not_before=Aug 17 16:24:56 2026 GMT not_after=Aug 17 16:27:06 2026 GMT
+svid[first]: bundle_certs=2 key=<shredded, never printed>
+issuance: expected_spiffe_id=spiffe://spike.incus.internal/guest/demo caller=root uid=0
+RESULT check=issuance outcome=PASS caller=root uid=0 spiffe_id=spiffe://spike.incus.internal/guest/demo serial=6E7977601C28A503CEF5D00AD555FA90 not_before=Aug 17 16:24:56 2026 GMT not_after=Aug 17 16:27:06 2026 GMT
+nonroot: socket=/tmp/spire-agent/public/api.sock [srwxrwxrwx root:root] dir=/tmp/spire-agent/public [drwx-----x root:root]
+nonroot: using existing user spike-workload uid=989
+fetch[nonroot]: Received 1 svid after 1.462532ms
+fetch[nonroot]: 
+fetch[nonroot]: SPIFFE ID:		spiffe://spike.incus.internal/guest/demo-app
+fetch[nonroot]: SVID Valid After:	2026-08-17 16:25:00 +0000 UTC
+fetch[nonroot]: SVID Valid Until:	2026-08-17 16:27:10 +0000 UTC
+fetch[nonroot]: CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+fetch[nonroot]: CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+fetch[nonroot]: CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+fetch[nonroot]: CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+fetch[nonroot]: 
+fetch[nonroot]: Writing SVID #0 to file /run/spike-workload-check/nonroot/svid.0.pem.
+fetch[nonroot]: Writing key #0 to file /run/spike-workload-check/nonroot/svid.0.key.
+fetch[nonroot]: Writing bundle #0 to file /run/spike-workload-check/nonroot/bundle.0.pem.
+svid[nonroot]: uid=989 spiffe_id=spiffe://spike.incus.internal/guest/demo-app serial=9E51DBA10B9199A1668ACA294451F80F key=<overwritten, never printed>
+RESULT check=issuance-nonroot outcome=PASS user=spike-workload uid=989 spiffe_id=spiffe://spike.incus.internal/guest/demo-app serial=9E51DBA10B9199A1668ACA294451F80F socket=/tmp/spire-agent/public/api.sock
+rotation: svid_lifetime_seconds=130 renewal_point_in=6s wait_seconds=45 grace=30s min_observation=45s poll_interval=15s
+fetch[poll]: Received 1 svid after 1.472561ms
+fetch[poll]: 
+fetch[poll]: SPIFFE ID:		spiffe://spike.incus.internal/guest/demo
+fetch[poll]: SVID Valid After:	2026-08-17 16:25:59 +0000 UTC
+fetch[poll]: SVID Valid Until:	2026-08-17 16:28:09 +0000 UTC
+fetch[poll]: CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+fetch[poll]: CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+fetch[poll]: CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+fetch[poll]: CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+fetch[poll]: 
+fetch[poll]: Writing SVID #0 to file /run/spike-workload-check/poll/svid.0.pem.
+fetch[poll]: Writing key #0 to file /run/spike-workload-check/poll/svid.0.key.
+fetch[poll]: Writing bundle #0 to file /run/spike-workload-check/poll/bundle.0.pem.
+svid[poll]: spiffe_id=spiffe://spike.incus.internal/guest/demo
+svid[poll]: serial=10C5A46922DDA32229ADE2FD6901A6FD not_before=Aug 17 16:25:59 2026 GMT not_after=Aug 17 16:28:09 2026 GMT
+svid[poll]: bundle_certs=2 key=<shredded, never printed>
+RESULT check=rotation outcome=PASS mode=poll first_serial=6E7977601C28A503CEF5D00AD555FA90 second_serial=10C5A46922DDA32229ADE2FD6901A6FD waited_seconds=15 spiffe_id=spiffe://spike.incus.internal/guest/demo
+workdir: files overwritten, /run/spike-workload-check unmounted, and both verified — overwrite plus unlink on tmpfs, NOT cryptographic erasure
+RESULT check=workload outcome=PASS spiffe_id=spiffe://spike.incus.internal/guest/demo socket=/tmp/spire-agent/public/api.sock first_serial=6E7977601C28A503CEF5D00AD555FA90 second_serial=10C5A46922DDA32229ADE2FD6901A6FD rotation=observed mode=poll nonroot=PASS nonroot_uid=989 material=shredded-and-unmounted
+EXIT=0
+
+======================================================================
+BOTH VERDICTS, SIDE BY SIDE
+======================================================================
+RESULT check=issuance         outcome=PASS caller=root uid=0   spiffe_id=.../guest/demo      serial=6E7977601C28A503CEF5D00AD555FA90
+RESULT check=issuance-nonroot outcome=PASS user=spike-workload uid=989 spiffe_id=.../guest/demo-app serial=9E51DBA10B9199A1668ACA294451F80F
+RESULT check=workload         outcome=PASS ... nonroot=PASS nonroot_uid=989
+exit 0 (exit 24 is the code reserved for 'root served, non-root not')
+
+The two callers received DIFFERENT SPIFFE IDs from the SAME socket, because the agent
+attested each caller's uid independently: unix:uid:0 -> /guest/demo, unix:uid:989 ->
+/guest/demo-app. That is the Workload API doing real caller attestation inside the guest,
+not a shared credential handed to whoever connects.
+
+--- socket path permissions, as observed (not as assumed) ---
+/tmp drwxrwxrwt root:root
+/tmp/spire-agent drwx-----x root:root
+/tmp/spire-agent/public drwx-----x root:root
+/tmp/spire-agent/public/api.sock srwxrwxrwx root:root
+
+PRECISION NOTE: guest-agent-bootstrap.sh creates any MISSING directory component mode 0755.
+Here /tmp/spire-agent and /tmp/spire-agent/public already existed from the previous run at
+mode 0700, so the harness did not recreate them -- it added o+x to each, giving 0701. It
+logged both actions:
+    agent: /tmp/spire-agent was mode 700 and not traversable; added o+x for the non-root workload path
+    agent: /tmp/spire-agent/public was mode 700 and not traversable; added o+x for the non-root workload path
+0701 is the tighter of the two outcomes and is sufficient: traversal needs only x. SPIRE
+itself serves the socket 0777 (srwxrwxrwx above), so the directory was the only barrier.

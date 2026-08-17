@@ -1,0 +1,22 @@
+### mint a nonce for spike-guest-a via the authenticated operator endpoint
+### (run inside the broker container, where the operator token already lives)
+2026-08-17T15:36:05Z
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=2b2d19cb684639d0fee7fc8c0f114df9
+  expires_at=2026-08-17T15:46:06.644164247Z
+  instance_name=spike-guest-a
+  generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=2b2d19cb684639d0fee7fc8c0f114df9 expires_at=2026-08-17T15:46:06.644164247Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+mint rc=0
+
+### host-side view: the key is set, value withheld
+payload length (bytes): 267
+payload field names: broker_fingerprint, broker_url, nonce, nonce_id

@@ -1,0 +1,66 @@
+### postfix-01 — redeploy of the fixed broker onto spike-broker
+### 2026-08-17T16:22Z, ovh-incusos. Commit 3f5b7f6.
+
+WHY: an independent security review (SECURITY_FINDINGS.md) found eight defects in the
+P9 broker + harness, and the original P9 live run had to hand-pass CHAIN_JQ/KEY_JQ/BUNDLE_JQ
+to work around a producer/consumer field-name mismatch (finding F2). This redeploy carries
+the fixes; the run that follows must need no such workaround.
+
+--- operator-side sha256 of the new binary ---
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /tmp/incus-spiffe-broker-linux
+
+--- sha256 of the binary deployed by the ORIGINAL P9 run (pre-redeploy) ---
+bd46b32d3c0b71c4f49cec8aeeb57ade8d4fb2cf132c3993d72c4745b1e04728  /usr/local/bin/incus-spiffe-broker
+
+--- stop the service ---
+$ incus exec spike-broker -- systemctl stop incus-spiffe-broker.service
+inactive
+
+--- push (progress meter elided) ---
+$ incus file push /tmp/incus-spiffe-broker-linux spike-broker/usr/local/bin/incus-spiffe-broker --mode 0755
+
+--- sha256 VERIFIED FROM INSIDE THE CONTAINER ---
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+expected  4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45
+MATCH
+
+--- credentials and socket exposure UNCHANGED (nothing re-provisioned) ---
+srwxrwx--- 1 root root 0 Aug 17 02:23 /hostagent/broker-run/broker.sock
+srw-rw-rw- 1 root root 0 Aug 17 15:33 /hostagent/wlapi-relay.sock
+broker.env keys (values withheld):
+INCUS_SPIFFE_BROKER_LISTEN
+INCUS_SPIFFE_BROKER_TLS_CERT
+INCUS_SPIFFE_BROKER_TLS_KEY
+INCUS_SPIFFE_BROKER_ADVERTISE_URL
+INCUS_SPIFFE_BROKER_INCUS_URL
+INCUS_SPIFFE_BROKER_INCUS_SERVER_FINGERPRINT
+INCUS_SPIFFE_BROKER_ATTESTOR_CERT
+INCUS_SPIFFE_BROKER_ATTESTOR_KEY
+INCUS_SPIFFE_BROKER_BOOTSTRAP_CERT
+INCUS_SPIFFE_BROKER_BOOTSTRAP_KEY
+INCUS_SPIFFE_BROKER_PROJECT
+INCUS_SPIFFE_BROKER_MINT_TOKEN_FILE
+INCUS_SPIFFE_BROKER_NONCE_TTL
+INCUS_SPIFFE_BROKER_MAX_NONCE_TTL
+INCUS_SPIFFE_BROKER_REAP_INTERVAL
+INCUS_SPIFFE_BROKER_REAP_TIMEOUT
+INCUS_SPIFFE_BROKER_REAP_GRACE
+INCUS_SPIFFE_BROKER_REQUEST_TIMEOUT
+INCUS_SPIFFE_BROKER_BROKER_SOCKET
+INCUS_SPIFFE_BROKER_WORKLOAD_API_SOCKET
+INCUS_SPIFFE_BROKER_AGENT_SPIFFE_ID
+
+--- restart ---
+active
+
+--- listening ---
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=1238,fd=6))
+
+--- startup log of the NEW binary ---
+{"time":"2026-08-17T16:22:46.515590279Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","broker_socket":"/hostagent/broker-run/broker.sock","workload_api_socket":"/hostagent/wlapi-relay.sock","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+{"time":"2026-08-17T16:22:46.51579578Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+
+NOTE ON HEALTH ENDPOINTS: the broker exposes no /live or /ready; probing them returns 404.
+The 200s recorded in cleanup-final-state.txt are the HOST SPIRE AGENT's health endpoints,
+not the broker's. Broker liveness is evidenced by the LISTEN line above and by the
+successful mint/redeem traffic in postfix-02.

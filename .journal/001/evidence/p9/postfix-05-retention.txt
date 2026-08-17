@@ -1,0 +1,139 @@
+### postfix-05 — EXCHANGE_RETENTION proven BOTH ways, side by side
+### 2026-08-17T16:27Z .. 16:31Z
+
+The flag decides whether the exchange credential survives its single use. It is the
+re-attestation knob. This transcript measures what each side actually costs, on the
+same guest, minutes apart.
+
+############### RUN A — EXCHANGE_RETENTION=shred (the DEFAULT, flag not passed) ###############
+
+Run A doubles as the post-restore re-verification of the clean path: postfix-04 deleted and
+recreated the exchange registration entry, so a PASS here proves the chain still works.
+
+--- A1. mint ---
+RESULT mint outcome=minted status=201 nonce_id=3779ecd9708a429b14470752ebf9d938 instance_name=spike-guest-a
+
+--- A2. bootstrap (no EXCHANGE_RETENTION on the command line at all) ---
+exchange: serial=1EE8F759289F355516787B32AB492A50 not_before=Aug 17 16:27:56 not_after=Aug 17 16:30:06 GMT
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+RESULT phase=p9-bootstrap outcome=PASS ... exchange_retention=shred exchange_material=shredded-and-unmounted
+exit 0
+
+--- A3. the tmpfs is GONE ---
+spike-exchange mounts: 0
+/run/spike-exchange: empty directory (drwx------ root:root, 40 bytes)
+
+--- A4. restart the agent with byte-identical configuration. It MUST die. ---
+$ spire-agent run -config /run/spike-p9/agent.conf
+level=info  msg="Starting agent" data_dir=/var/lib/spire-agent version=1.15.2
+level=error msg="Failed to configure plugin" plugin_name=x509pop plugin_type=NodeAttestor
+            error="rpc error: code = InvalidArgument desc = unable to load keypair:
+                   open /run/spike-exchange/svid.pem: no such file or directory"
+level=info  msg="Plugin unloaded" plugin_name=x509pop plugin_type=NodeAttestor
+level=error msg="Agent crashed" error="failed to configure plugin \"x509pop\": ... unable to load keypair ..."
+
+The agent never reached an attested state and exited. This is the DOCUMENTED consequence of
+shred, not a defect: x509pop re-reads certificate_path and private_key_path on EVERY
+attestation, including a re-attestation, and shred removed both.
+
+--- A5. the Workload API is not serving ---
+$ spire-agent healthcheck -socketPath /tmp/spire-agent/public/api.sock
+Agent is unhealthy: unable to determine health
+
+--- A6. what the guest still holds ---
+/var/lib/spire-agent/agent-data.json  (node SVID CERTIFICATES only)
+/var/lib/spire-agent/bundle.pem       (public trust bundle)
+No SPIRE private key on any guest filesystem.
+HONESTY NOTE: a naive 'grep -rl "PRIVATE KEY" /var/lib/spire-agent /run' also lists
+/run/incus_agent/agent.key and /run/incus_agent/incus-agent. Those belong to the INCUS
+guest agent and predate this spike entirely; they are not SPIRE material and not the
+exchange key. Scoping the search to SPIRE paths returns nothing:
+  matches under SPIRE paths: 0
+
+RUN A VERDICT: exchange_material=shredded-and-unmounted; the agent CANNOT survive a
+               process restart; recovery costs one operator-minted nonce.
+
+############### RUN B — EXCHANGE_RETENTION=keep ###############
+
+--- B1. mint ---
+RESULT mint outcome=minted status=201 nonce_id=2ae721d48306f2a198c6e6dc8f367322 expires_at=2026-08-17T16:39:35.26004462Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+--- B2. bootstrap with EXCHANGE_RETENTION=keep ---
+exchange: serial=801687C2FE1A117FD654EA62FBA9B78A not_before=Aug 17 16:29:01 2026 GMT not_after=Aug 17 16:31:11 2026 GMT
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+exchange: scratch directory removed (staged payload and nonce gone); the credential files remain
+note: the exchange credential is RETAINED, so this agent can re-attest with x509pop
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=2ae721d48306f2a198c6e6dc8f367322 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 16:31:11 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_retention=keep exchange_material=kept-by-policy
+
+--- B3. THE BOXED WARNING, verbatim from stderr ---
+WARNING: ############################################################################
+WARNING: EXCHANGE_RETENTION=keep: the exchange PRIVATE KEY STAYS in /run/spike-exchange for the
+WARNING: lifetime of this agent. That is the point — x509pop re-reads certificate_path
+WARNING: and private_key_path on every attestation, so this agent CAN re-attest — and
+WARNING: this is what it costs:
+WARNING:   * the credential is no longer single-use and no longer short-lived;
+WARNING:   * anyone who gets root in this guest can take it and become node spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+WARNING:     until Aug 17 16:31:11 2026 GMT;
+WARNING:   * tmpfs pages can be swapped, so 'memory-only' is not a guarantee either.
+WARNING: Destroy it by hand when the agent no longer needs it:
+WARNING:   find /run/spike-exchange -type f -exec shred -u -z -n 1 {} + && umount /run/spike-exchange
+WARNING: ############################################################################
+WARNING: EXCHANGE_RETENTION=keep: the exchange PRIVATE KEY is LIVE in /run/spike-exchange and stays there.
+WARNING: Destroy it by hand when the agent no longer needs it:
+WARNING:   find /run/spike-exchange -type f -exec shred -u -z -n 1 {} + && umount /run/spike-exchange
+
+--- B4. the credential is still there ---
+spike-exchange mounts: 1
+  -rw------- 1 root root 1539 Aug 17 16:29 bundle.pem
+  -rw------- 1 root root  242 Aug 17 16:29 svid.key      <-- the exchange PRIVATE KEY, live
+  -rw------- 1 root root  864 Aug 17 16:29 svid.pem
+
+--- B5. restart the agent. It MUST come back. ---
+$ kill $(cat /run/spike-p9/agent.pid); spire-agent run -config /run/spike-p9/agent.conf
+level=info msg="Starting agent" data_dir=/var/lib/spire-agent version=1.15.2
+level=info msg="Bundle loaded" subsystem_name=attestor trust_domain_id="spiffe://spike.incus.internal"
+level=info msg="SVID is not found. Starting node attestation" subsystem_name=attestor
+level=info msg="Node attestation was successful" reattestable=true
+           spiffe_id="spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a"
+level=info msg="Creating X509-SVID" entry_id=9353cac4-9cb0-4de8-974e-66873b2384e2 spiffe_id=".../guest/demo"
+level=info msg="Creating X509-SVID" entry_id=fac80b50-71e8-49c1-933f-90aacf7eb1c4 spiffe_id=".../guest/demo-app"
+
+The agent re-attested with the SAME node SPIFFE ID and immediately re-issued both workload
+SVIDs. Note reattestable=true: the SPIRE 1.15.2 server marks x509pop nodes re-attestable, so
+the only thing that stopped Run A was the absence of the credential files.
+
+RUN B VERDICT: exchange_material=kept-by-policy; the agent CAN survive a process restart
+               and needs no operator involvement; the private key stays readable by guest
+               root for the agent's lifetime.
+
+############### SIDE BY SIDE ###############
+
+                                  shred (default)              keep
+  exchange key after use          overwritten, tmpfs gone      LIVE in /run/spike-exchange
+  RESULT exchange_material        shredded-and-unmounted       kept-by-policy
+  agent survives process restart  NO — 'unable to load keypair' YES — re-attests, same node ID
+  Workload API after restart      not serving                  serving, both SVIDs re-issued
+  recovery cost                   one operator-minted nonce    none
+  who can steal the credential    nobody after ~1 second       any guest root, until it expires
+  operator warning printed        no                           yes, boxed, on stderr
+
+THE CONCRETE COST OF FRESH-CREDENTIAL-PER-BOOT. shred is the security-correct default and
+the price is exactly the Run A failure: every boot and every agent restart is an outage
+until an operator mints a nonce. keep removes that outage and replaces it with a live
+private key sitting in guest RAM that any guest-root compromise can lift and replay as the
+node identity. Neither is free; the spike ships shred and says so out loud. The middle
+option EVIDENCE.md already names — mint driven by the instance lifecycle, so a rebooting
+guest finds a valid nonce waiting — is still not implemented and still not tested.
+
+--- B6. the kept credential was then DESTROYED with the exact command the warning printed ---
+$ find /run/spike-exchange -type f -exec shred -u -z -n 1 {} + && umount /run/spike-exchange
+spike-exchange mounts now: 0   /run/spike-exchange: empty
+
+--- B7. the guest is LEFT IN THE shred STATE, as required ---
+   2264 spire-agent run -config /run/spike-p9/agent.conf
+   2307 sh -c ps -eo pid,args | grep [s]pire-agent; grep -c spike-exchange /proc/mounts | sed "s/^/spike-exchange mounts: /"; spire-agent healthcheck -socketPath /tmp/spire-agent/public/api.sock
+spike-exchange mounts: 0
+Agent is healthy.
+final bootstrap of this transcript: nonce_id=fa356e1f71992037c4ee5ebc1eb78788
+RESULT phase=p9-bootstrap outcome=PASS ... exchange_retention=shred exchange_material=shredded-and-unmounted

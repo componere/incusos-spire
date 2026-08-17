@@ -1,0 +1,42 @@
+### shred verification, inside spike-guest-a, after a PASS bootstrap
+2026-08-17T15:37:48Z
+
+--- is /run/spike-exchange still a mount point? ---
+not a mount point
+
+--- what filesystem backs the path now, and what is in it? ---
+/run/spike-exchange backing_fs=tmpfs
+total 0
+drwx------  2 root root  40 Aug 17 15:36 .
+drwxr-xr-x 20 root root 460 Aug 17 15:36 ..
+
+--- no tmpfs of ours left anywhere ---
+spike-exchange mounts in /proc/mounts: 0
+
+--- exhaustive search of every writable filesystem for exchange material ---
+0 hits for svid.key / svid.pem / redeem-response* / *spike-exchange*
+
+--- what the guest DID keep on disk (public material only) ---
+/run/spike-p9:
+total 16
+drwx------  2 root root  100 Aug 17 15:36 .
+drwxr-xr-x 20 root root  460 Aug 17 15:36 ..
+-rw-r--r--  1 root root 6687 Aug 17 15:36 agent.conf
+-rw-------  1 root root    5 Aug 17 15:36 agent.pid
+-rw-------  1 root root 2248 Aug 17 15:36 spire-agent.log
+
+/var/lib/spire-agent:
+total 16
+drwx------  2 root root 4096 Aug 17 15:36 .
+drwxr-xr-x 19 root root 4096 Aug 17 15:36 ..
+-rw-------  1 root root 3358 Aug 17 15:36 agent-data.json
+-rw-r--r--  1 root root 1539 Aug 17 15:36 bundle.pem
+
+--- bundle.pem holds only CERTIFICATE blocks; no private key anywhere on disk ---
+2
+no file under /var/lib/spire-agent or /run/spike-p9 contains a PRIVATE KEY block
+--- addendum: the -xdev search above stayed on the root filesystem; repeat across all mounts ---
+0 hits for svid.key / svid.pem / redeem-response* across every mounted filesystem
+remaining spike-exchange paths:
+  /run/spike-exchange
+  (an empty mode-0700 directory is all that survives; the tmpfs that held the key is unmounted)

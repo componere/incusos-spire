@@ -1,0 +1,16 @@
+=== spire-server agent list (pre-P9) ===
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 16:21:30 +0000 UTC
+Serial number     : 273237934997501857321960965805831416060
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+=== spire-server entry show (pre-P9) ===
+Found 0 entries
+
+=== server x509pop config ===
+Error: Command not found

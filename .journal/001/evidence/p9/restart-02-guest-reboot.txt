@@ -1,0 +1,54 @@
+### (b) reboot the guest VM
+2026-08-17T15:40:23Z
+--- state immediately before the reboot ---
+1588 spire-agent run -config /run/spike-p9/agent.conf
+/run/spike-p9:
+agent.conf
+agent.pid
+restart.log
+spire-agent.log
+
+/var/lib/spire-agent:
+agent-data.json
+bundle.pem
+
+$ incus restart spike-guest-a --project spike-spiffe
+2026-08-17T15:40:26Z
+
+--- after reboot: what survived, and what did not ---
+2026-08-17T15:40:40Z
+spire-agent process: none
+/run/spike-p9 (tmpfs, rendered config + log): GONE
+/run/spike-exchange (the tmpfs that held the key): GONE
+/var/lib/spire-agent (persistent data_dir): agent-data.json
+bundle.pem
+private keys on disk: none
+
+--- the instance generation moved across the reboot ---
+volatile.uuid.generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+volatile.uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- the server still lists the guest node: an attested node record outlives the guest agent ---
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+--- proof the VM really rebooted ---
+up 0 minutes
+2026-08-17 15:40:28
+agent.conf.template
+broker-ca.pem
+guest-agent-bootstrap.sh
+guest-workload-check.sh
+
+--- recovery after reboot: one bootstrap per boot, exactly as defined ---
+2026-08-17T15:40:57Z
+RESULT mint outcome=minted status=201 nonce_id=1f9f43e3103d8d9bd7ec1f6f3789a694 expires_at=2026-08-17T15:50:58.50997063Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+exchange: serial=68682E7823BAE9BFA5091E13F06D8D80 not_before=Aug 17 15:40:45 2026 GMT not_after=Aug 17 15:42:55 2026 GMT
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: healthcheck ready on /tmp/spire-agent/public/api.sock (standard Workload API is serving)
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=1f9f43e3103d8d9bd7ec1f6f3789a694 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 15:42:55 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_material=shredded-and-unmounted
+
+--- the in-guest workload gets its identity again from the guest's own Workload API ---
+RESULT check=issuance outcome=PASS spiffe_id=spiffe://spike.incus.internal/guest/demo serial=1630E390A1279007005EB394BC2937F2 not_before=Aug 17 15:40:49 2026 GMT not_after=Aug 17 15:42:59 2026 GMT

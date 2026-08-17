@@ -1,0 +1,63 @@
+### (a) restart the guest agent PROCESS only — intended behaviour: it cannot re-attest
+2026-08-17T15:39:40Z
+
+--- before: the agent is running and its Workload API serves ---
+1217
+1217 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+
+--- what the agent has on disk (AGENT_KEY_MANAGER=memory) ---
+total 16
+drwx------  2 root root 4096 Aug 17 15:36 .
+drwxr-xr-x 19 root root 4096 Aug 17 15:36 ..
+-rw-------  1 root root 3358 Aug 17 15:36 agent-data.json
+-rw-r--r--  1 root root 1539 Aug 17 15:36 bundle.pem
+--- x509pop paths the rendered config still points at ---
+trust_bundle_path = "/var/lib/spire-agent/bundle.pem"
+# certificate_path may hold the leaf followed by any intermediates in one
+certificate_path = "/run/spike-exchange/svid.pem"
+private_key_path = "/run/spike-exchange/svid.key"
+# KeyManager: this holds the agent's OWN node-SVID private key, not the
+KeyManager "memory" {
+total 0
+drwx------  2 root root  40 Aug 17 15:36 .
+drwxr-xr-x 21 root root 480 Aug 17 15:38 ..
+
+--- kill it ---
+no spire-agent process
+
+--- start it again with exactly the same configuration ---
+the agent exited
+
+--- what it said ---
+time="2026-08-17T15:39:42Z" level=info msg="Starting agent" data_dir=/var/lib/spire-agent version=1.15.2
+time="2026-08-17T15:39:42Z" level=error msg="Failed to configure plugin" error="rpc error: code = InvalidArgument desc = unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T15:39:42Z" level=debug msg="Unloading plugin" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T15:39:42Z" level=debug msg="Plugin deinitialized" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T15:39:42Z" level=info msg="Plugin unloaded" external=false plugin_name=x509pop plugin_type=NodeAttestor subsystem_name=catalog
+time="2026-08-17T15:39:42Z" level=error msg="Agent crashed" error="failed to configure plugin \"x509pop\": rpc error: code = InvalidArgument desc = unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory"
+
+--- is a Workload API serving? ---
+Agent is unhealthy: unable to determine health
+--- recovery: the defined story is one bootstrap per agent start. Fresh nonce, re-run. ---
+2026-08-17T15:40:12Z
+RESULT mint outcome=minted status=201 nonce_id=d7ac109d49383446627e1bb2616cde72 expires_at=2026-08-17T15:50:12.917150957Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+exchange: serial=7DC8D002B1896F45E1CA3655C14C2E96 not_before=Aug 17 15:39:44 2026 GMT not_after=Aug 17 15:41:54 2026 GMT
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: healthcheck ready on /tmp/spire-agent/public/api.sock (standard Workload API is serving)
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=d7ac109d49383446627e1bb2616cde72 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 15:41:54 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_material=shredded-and-unmounted
+recovery rc=0
+
+--- the node ID is unchanged; the x509pop SERIAL selector moved with the new exchange cert ---
+Found an attested agent given its SPIFFE ID
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 16:40:14 +0000 UTC
+Serial number     : 224806922891277068357846132313571245792
+Can re-attest     : true
+Agent version     : 1.15.2
+
+Selectors         : x509pop:ca:fingerprint:ef7e6ffe03011a50e1278bdcb4fdd7dc549dedb4
+Selectors         : x509pop:serialnumber:7dc8d002b1896f45e1ca3655c14c2e96

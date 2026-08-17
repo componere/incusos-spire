@@ -1,0 +1,49 @@
+### N2 — spike-guest-b, no nonce of its own: it cannot read A's key through its own socket
+2026-08-17T15:43:30Z
+--- what each guest's own /dev/incus/sock exposes right now ---
+guest A user.spiffe-bootstrap bytes: 1
+guest B user.spiffe-bootstrap bytes: 1
+
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 404
+RESULT phase=p9-bootstrap outcome=ERROR reason=bootstrap_key_absent socket_status=404
+ERROR: user.spiffe-bootstrap is not set on this instance (HTTP 404): no nonce has been minted for it
+exchange: material shredded and /run/spike-exchange unmounted (memory-only, single-use, short-lived)
+guest-b-no-nonce rc=3
+
+### N3 — spike-guest-b WITH its own nonce: the broker resolves only B, and there is no
+###      exchange registration entry for B's UUID. This is also the natural Broker-side
+###      failure the task asks to classify.
+2026-08-17T15:43:44Z
+RESULT mint outcome=minted status=201 nonce_id=da67a809814293352f32eb90692efe71 expires_at=2026-08-17T15:53:44.78826055Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe
+
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=da67a809814293352f32eb90692efe71
+payload: sha256=dbeadef4867a9585f4ab12ddf31dc5b1a30525607211fe764d00ecba2215b2a1
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=da67a809814293352f32eb90692efe71
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 503
+verdict: ERROR 503 — a broker dependency is unavailable: the nonce store, the Incus API,
+         or the host agent's Broker API endpoint that mints the exchange SVID. Retryable.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=503 nonce_id=da67a809814293352f32eb90692efe71 broker_reason=unavailable
+exchange: material shredded and /run/spike-exchange unmounted (memory-only, single-use, short-lived)
+guest-b-own-nonce rc=13
+
+--- broker's view: which failure class, and was the nonce burned? ---
+{"time":"2026-08-17T15:43:44.803738507Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"da67a809814293352f32eb90692efe71","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","generation":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","expires_at":"2026-08-17T15:53:44.78826055Z"}
+{"time":"2026-08-17T15:43:45.709372893Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"da67a809814293352f32eb90692efe71","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","project":"spike-spiffe"}
+{"time":"2026-08-17T15:43:45.717827358Z","level":"ERROR","msg":"nonce consumed but no exchange SVID was issued","operation":"redeem","outcome":"burned","nonce_id":"da67a809814293352f32eb90692efe71","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","failure_class":"broker_no_svid","peer_address":"10.55.156.75:33320","http_status":503,"code":"unavailable","reason":"broker delivered no X.509-SVID: response carried an empty SVID list"}
+
+--- is the nonce still redeemable? user.spiffe-bootstrap on B after the failure ---
+guest B user.spiffe-bootstrap bytes: 1
+
+--- the server never created a node for B ---
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a

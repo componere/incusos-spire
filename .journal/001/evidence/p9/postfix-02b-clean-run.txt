@@ -1,0 +1,132 @@
+### postfix-02b — CLEAN END-TO-END RUN, NO MANUAL INTERVENTION
+### 2026-08-17T16:24:16Z
+
+--- 1. mint a nonce through the AUTHENTICATED operator endpoint ---
+$ incus exec spike-broker -- env BROKER_URL=... MINT_AUTH_TOKEN_FILE=/state/auth/mint-token \
+    /root/p8/operator-mint.sh a955ca30-a0dc-4087-a369-37d53d389c5a spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=804ea6d00fcfb1528f90bf6ecabd9ca2
+  expires_at=2026-08-17T16:34:17.258818131Z
+  instance_name=spike-guest-a
+  generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=804ea6d00fcfb1528f90bf6ecabd9ca2 expires_at=2026-08-17T16:34:17.258818131Z instance_name=spike-guest-a generation_uuid=c32efc7b-f3d8-4637-9818-f8906c35543a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+--- 2. THE BOOTSTRAP. Note what is NOT on this command line: no CHAIN_JQ, no KEY_JQ,
+---    no BUNDLE_JQ, no hand-editing of the script, no manual field extraction. ---
+$ incus exec spike-guest-a --project spike-spiffe -- env \
+    SPIRE_SERVER_ADDRESS=10.55.156.67 SPIRE_SERVER_PORT=8081 \
+    TRUST_DOMAIN=spike.incus.internal BROKER_CACERT=/root/p9/broker-ca.pem \
+    /root/p9/guest-agent-bootstrap.sh
+
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=804ea6d00fcfb1528f90bf6ecabd9ca2
+payload: sha256=ab957487c5a0468d5a10d073a74dce55e935c5c25414823741ec159098409366
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=804ea6d00fcfb1528f90bf6ecabd9ca2
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:c32efc7b-f3d8-4637-9818-f8906c35543a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+exchange: private key parses and matches the certificate (public-key digests equal)
+exchange: certificate_path=/run/spike-exchange/svid.pem chain_certs=1 (leaf first; x509pop accepts leaf+intermediates in one file)
+exchange: private_key_path=/run/spike-exchange/svid.key mode=0600 (tmpfs only, never written to a persistent guest filesystem)
+exchange: trust_bundle_path=/run/spike-exchange/bundle.pem bundle_certs=2
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a (read from the certificate, which is authoritative)
+exchange: serial=19FFC449D16222BDD1A5B9EDC9798ACE not_before=Aug 17 16:23:36 2026 GMT not_after=Aug 17 16:25:46 2026 GMT
+exchange: response exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_expires_at=2026-08-17T16:25:46Z
+exchange: expected_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: trust bundle persisted to /var/lib/spire-agent/bundle.pem (public material, Appendix D rule 3) so the agent can be restarted
+agent: rendered /run/spike-p9/agent.conf from /root/p9/agent.conf.template
+agent: trust_domain=spike.incus.internal server=10.55.156.67:8081 data_dir=/var/lib/spire-agent
+agent: socket_path=/tmp/spire-agent/public/api.sock key_manager=memory trust_bundle_path=/var/lib/spire-agent/bundle.pem
+agent: spire-agent validate -config accepted the rendered configuration
+agent: /tmp/spire-agent was mode 700 and not traversable; added o+x for the non-root workload path
+agent: /tmp/spire-agent/public was mode 700 and not traversable; added o+x for the non-root workload path
+agent: started spire-agent run -config /run/spike-p9/agent.conf pid=1507 log=/run/spike-p9/spire-agent.log
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: healthcheck ready on /tmp/spire-agent/public/api.sock (standard Workload API is serving)
+agent: expected_node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: workload_api=/tmp/spire-agent/public/api.sock socket=srwxrwxrwx root:root dir=drwx-----x root:root
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+note: the exchange credential is gone and the agent keeps running on the node SVID it
+      obtained. It cannot re-attest: x509pop reloads certificate_path and
+      private_key_path on every attestation, and a restart from here dies with
+      'unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory'.
+      A restart or reboot therefore needs a FRESH nonce: one bootstrap per boot,
+      chosen rather than discovered. AGENT_KEY_MANAGER=memory.
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=804ea6d00fcfb1528f90bf6ecabd9ca2 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 16:25:46 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_retention=shred exchange_material=shredded-and-unmounted
+EXIT=0
+
+--- 3. the server lists the guest node AGAIN, rebuilt from nothing ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 17:17:58 +0000 UTC
+Serial number     : 142590035732384218146136465849234101008
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 17:24:26 +0000 UTC
+Serial number     : 106212368677016675441912572316649507173
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+--- 4. its x509pop selectors (NEW serial: this is a new exchange certificate) ---
+Found an attested agent given its SPIFFE ID
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 17:24:26 +0000 UTC
+Serial number     : 106212368677016675441912572316649507173
+Can re-attest     : true
+Agent version     : 1.15.2
+
+Selectors         : x509pop:ca:fingerprint:ef7e6ffe03011a50e1278bdcb4fdd7dc549dedb4
+Selectors         : x509pop:serialnumber:19ffc449d16222bdd1a5b9edc9798ace
+
+--- 5. broker log for THIS redemption (canonical field names produced, nonce granted) ---
+{"time":"2026-08-17T16:24:17.275505108Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"804ea6d00fcfb1528f90bf6ecabd9ca2","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","expires_at":"2026-08-17T16:34:17.258818131Z"}
+{"time":"2026-08-17T16:24:26.304166066Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"804ea6d00fcfb1528f90bf6ecabd9ca2","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+{"time":"2026-08-17T16:24:26.315867275Z","level":"INFO","msg":"bootstrap nonce redeemed","operation":"redeem","outcome":"granted","nonce_id":"804ea6d00fcfb1528f90bf6ecabd9ca2","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"c32efc7b-f3d8-4637-9818-f8906c35543a","project":"spike-spiffe","exchange_spiffe_id":"spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a","exchange_expires_at":"2026-08-17T16:25:46Z","http_status":200}
+
+--- 6. user.spiffe-bootstrap cleared by the broker on redemption ---
+<unset>
+
+======================================================================
+WHAT THIS PROVES, AND WHAT THE PREVIOUS RUN COULD NOT CLAIM
+======================================================================
+* exit 0, outcome=PASS, on the FIRST attempt, with a single nonce.
+* The command line carries NO CHAIN_JQ / KEY_JQ / BUNDLE_JQ. The original run needed all
+  three (EVIDENCE.md finding F2) and burned a nonce discovering it.
+* 'extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem
+  (the broker's own names)' -- the harness now reads the canonical contract FIRST.
+* exchange_spiffe_id matched .../spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a,
+  and the harness checked it against the CERTIFICATE, not just the JSON field.
+* The guest agent attested: node_spiffe_id .../spire/agent/x509pop/incus/a955ca30-...,
+  exactly the v1.15.2 default mapping X509POP_BRIEF.md predicted.
+* The server lists the guest node again, from a state where it listed only the host.

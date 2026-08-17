@@ -1,0 +1,33 @@
+### 1. attach the host agent state volume into the broker container
+$ incus config device add spike-broker hostagent disk pool=local source=spike-spire-agent-state path=/hostagent
+Device hostagent added to spike-broker
+
+### 2. what the broker can now see (read-write mount, required for connect(2))
+local/incus/custom/default_spike-spire-agent-state /hostagent rw,relatime,xattr,posixacl,casesensitive
+total 116
+drwx--x--x 11 root root      16 Aug 17 02:24 .
+drwxr-xr-x 19 root root      23 Aug 17 15:28 ..
+drwxr-xr-x  2 root root       4 Aug 17 15:21 agent-data
+drwxr-xr-x  2  501 dialout    4 Aug 17 01:50 bin
+drwxr-xr-x  2  501 root       4 Aug 17 02:23 broker-run
+drwxr-xr-x  2  501 root       6 Aug 17 01:52 broker-svid
+drwxr-xr-x  2 root root       5 Aug 17 01:50 conf
+-rw-------  1 root root     940 Aug 16 21:46 devid.csr
+-rw-r--r--  1 root root    2831 Aug 16 21:46 devid.pem
+-rw-------  1 root root     190 Aug 16 21:46 devid.priv.blob
+-rw-------  1 root root     280 Aug 16 21:46 devid.pub.blob
+-rw-r--r--  1  501 root    2954 Aug 17 01:52 incus-broker.protoset
+drwxr-xr-x  2  501 dialout    5 Aug 17 01:50 incus-creds
+drwxr-xr-x  8 root root       8 Aug 16 22:42 negatives
+drwxr-xr-x  2  501 root       9 Aug 17 01:54 rogue-svid
+drwxr-xr-x  2 root root       3 Aug 17 02:23 run
+
+### 3. the two sockets
+/hostagent/broker-run/broker.sock srwxrwx--- root:root socket
+/hostagent/run/api.sock srwxrwxrwx root:root socket
+
+### 4. SECURITY CONSEQUENCE: the same volume also carries the P1 DevID material
+/hostagent/devid.csr
+/hostagent/devid.pem
+/hostagent/devid.priv.blob
+/hostagent/devid.pub.blob

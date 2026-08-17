@@ -1,0 +1,92 @@
+=== P8 post-hardening: the expired-nonce reaper, closing live finding F2 — 2026-08-17T04:56:15Z ===
+
+F2 said: nothing ever clears an unredeemed user.spiffe-bootstrap. In the original
+run the case-c nonce expired and the guest could still read the key; only the
+redemption failed. This section shows the key being withdrawn with nobody
+redeeming anything.
+
+--- test configuration: short sweep values so the proof fits in a transcript ---
+INCUS_SPIFFE_BROKER_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_MAX_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_REAP_INTERVAL=10s
+INCUS_SPIFFE_BROKER_REAP_TIMEOUT=30s
+INCUS_SPIFFE_BROKER_REAP_GRACE=10s
+{"time":"2026-08-17T04:56:16.704667729Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"10s","reap_timeout":"30s","reap_grace":"10s","request_timeout":"10s"}
+{"time":"2026-08-17T04:56:16.70481149Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"10s","timeout":"30s","grace":"10s"}
+
+--- mint a 10-second nonce for spike-guest-a and DO NOT redeem it ---
+mint at (UTC): 2026-08-17T04:56:20Z
+request body:  {"instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe","ttl_seconds":10}
+credential:    good
+HTTP status:   201
+WWW-Authenticate: 
+response body: {"nonce_id":"b05987faeb4b463fb622bdc91a1e0586","expires_at":"2026-08-17T04:56:31.365412112Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+response sha256: 89b7bcc33b983eac07aab096a06c88dac0bf11b1b7115653482cf8dc05e8072c
+secret-bearing keys in answer: none
+
+--- host view immediately after the mint ---
+user.spiffe-bootstrap on spike-guest-a: SET (value withheld: Appendix D)
+  the guest can read it too, through its own socket:
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=b05987faeb4b463fb622bdc91a1e0586
+payload: nonce=<redacted, present>
+RESULT mode=fetch outcome=ok source=socket nonce_id=b05987faeb4b463fb622bdc91a1e0586 payload_sha256=451e2010bdbccd4126908665ca027fd8c5f86d95bd9391fd23f15158c5db9c07 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+
+--- poll the host key every 5s; nobody redeems anything ---
+expiry 04:56:31.365 + reap-grace 10s = withdrawable from 04:56:41.365,
+and the sweep runs every 10s.
+  04:56:33  user.spiffe-bootstrap: SET
+  04:56:38  user.spiffe-bootstrap: SET
+  04:56:43  user.spiffe-bootstrap: SET
+  04:56:49  user.spiffe-bootstrap: GONE
+
+--- the guest's own socket agrees ---
+GET /1.0/config/user.spiffe-bootstrap -> HTTP 404
+jq: error (at <stdin>:1): null (null) has no keys
+visible user.* keys: 
+
+--- broker log: who cleared it, and on whose behalf ---
+{"time":"2026-08-17T04:54:56.633001157Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"84f7e11ad71942ca1414fa724421589b","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:55688","http_status":409,"code":"conflict","reason":"nonce: consume nonce 84f7e11ad71942ca1414fa724421589b: nonce: nonce expired: id 84f7e11ad71942ca1414fa724421589b"}
+{"time":"2026-08-17T04:55:15.629691698Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.150:33186","http_status":400,"code":"invalid_request","reason":"decode request body: json: unknown field \"instance_uuid\""}
+{"time":"2026-08-17T04:55:28.01784375Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.150:36060","http_status":400,"code":"invalid_request","reason":"decode request body: json: unknown field \"instance_uuid\""}
+{"time":"2026-08-17T04:55:41.080097809Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"4b3402057ae701f1614ff1f4fd393da4","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+{"time":"2026-08-17T04:55:41.082309806Z","level":"INFO","msg":"bootstrap nonce redeemed","operation":"redeem","outcome":"granted","nonce_id":"4b3402057ae701f1614ff1f4fd393da4","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","http_status":200}
+{"time":"2026-08-17T04:56:16.690208994Z","level":"INFO","msg":"expired nonce reaper stopped","operation":"reap"}
+{"time":"2026-08-17T04:56:16.704667729Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"10s","reap_timeout":"30s","reap_grace":"10s","request_timeout":"10s"}
+{"time":"2026-08-17T04:56:16.70481149Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"10s","timeout":"30s","grace":"10s"}
+{"time":"2026-08-17T04:56:46.729605899Z","level":"INFO","msg":"expired nonce withdrawn","operation":"reap","nonce_id":"b05987faeb4b463fb622bdc91a1e0586","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe","expires_at":"2026-08-17T04:56:31.365412112Z","instance_name":"spike-guest-a"}
+
+(The bare `visible user.* keys:` line above is a jq artefact of this ad-hoc probe,
+not a broker result: GET /1.0 on the guest socket answers without a metadata
+object, so `.metadata.config` is null. The authoritative reads are the HTTP 404
+on the line above it and the host-side `incus config get`, and both say the key
+is gone.)
+
+--- what this proves ---
+
+  04:56:20.365   nonce b05987faeb4b463fb622bdc91a1e0586 minted, ttl_seconds=10
+  04:56:31.365   expires_at — the nonce stops being redeemable
+  04:56:33/38/43 user.spiffe-bootstrap still SET on spike-guest-a
+  04:56:41.365   expires_at + reap-grace 10s: now withdrawable
+  04:56:46.729   broker log: "expired nonce withdrawn" operation=reap
+                 nonce_id=b05987faeb4b463fb622bdc91a1e0586
+                 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+                 instance_name=spike-guest-a expires_at=04:56:31.365
+  04:56:49       host: user.spiffe-bootstrap GONE; guest socket: HTTP 404
+
+No redemption of b05987fa… appears anywhere in the log, because none happened.
+The only actor was the sweep, and the withdrawal names the nonce ID and the
+instance UUID so an operator can tell a reaped nonce from a redeemed one. The
+grace window is visible as designed: the key survived expiry by roughly ten
+seconds and then went, which is what keeps an expired nonce answering 409 rather
+than 401 for callers who are merely late.
+
+Finding F2 is closed in code. It is worth being precise about what "closed"
+means: the value stops working at expires_at, and the reaper bounds how long the
+dead value lingers in instance configuration. It does not shorten the window in
+which a live nonce is a bearer credential — that is the untouched architectural
+finding SEC-009, recorded in SECURITY_FINDINGS.md.
+
+--- restore sane sweep values ---
+{"time":"2026-08-17T04:57:13.977232554Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+{"time":"2026-08-17T04:57:13.977361454Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}

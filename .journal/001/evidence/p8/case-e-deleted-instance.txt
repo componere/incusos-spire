@@ -1,0 +1,67 @@
+=== case e (MANUAL) — nonce for a DELETED instance is rejected
+date=2026-08-17T03:57:38Z
+reason for manual run: lifecycle-matrix.sh case e failed in run 1 with
+  'spike-guest-tmp could not read its bootstrap key (exit 2)' because the stock
+  images:debian/13 rootfs has no jq and the harness has no package-install hook.
+  The script was NOT edited; the same sequence is driven by hand with jq installed.
+
+--- throwaway instance
+      NAME         STATE          IPV4                               IPV6                         TYPE     SNAPSHOTS 
+ spike-guest-tmp  RUNNING  10.55.156.37 (eth0)  fd42:eb1e:5a09:f8d2:1266:6aff:fe19:d220 (eth0)  CONTAINER  0         
+spike-guest-tmp volatile.uuid=d124f996-a01f-406d-aa21-4d4e7fdc7777
+
+--- mint for the throwaway instance
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=d124f996-a01f-406d-aa21-4d4e7fdc7777 project=spike-spiffe ttl_seconds=<broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=1c2b7f928923855f61aed718fbd4b21d
+  expires_at=2026-08-17T04:07:39.933599634Z
+  instance_name=spike-guest-tmp
+  generation_uuid=d124f996-a01f-406d-aa21-4d4e7fdc7777
+  instance_uuid=d124f996-a01f-406d-aa21-4d4e7fdc7777
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=1c2b7f928923855f61aed718fbd4b21d expires_at=2026-08-17T04:07:39.933599634Z instance_name=spike-guest-tmp generation_uuid=d124f996-a01f-406d-aa21-4d4e7fdc7777 instance_uuid=d124f996-a01f-406d-aa21-4d4e7fdc7777 project=spike-spiffe
+
+--- throwaway reads its own key through its own /dev/incus/sock and stages it
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=1c2b7f928923855f61aed718fbd4b21d
+payload: sha256=d40b1401041caa1d1189c7c4e911b8e633085e55c12ae94622f28c4774a34eb8
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+staged: wrote the raw payload to /root/p8/e-payload.json (mode 0600, root only)
+RESULT mode=fetch outcome=ok source=socket nonce_id=1c2b7f928923855f61aed718fbd4b21d payload_sha256=d40b1401041caa1d1189c7c4e911b8e633085e55c12ae94622f28c4774a34eb8 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+
+--- pipe the payload tmp -> guest B (guest-to-guest; never touches operator disk)
+piped; sha256 in B: d40b1401041caa1d1189c7c4e911b8e633085e55c12ae94622f28c4774a34eb8
+
+--- delete the instance the nonce is bound to
+deleted at 2026-08-17T03:57:43Z; UUID d124f996-a01f-406d-aa21-4d4e7fdc7777 now resolves to:
+       NAME          STATE            IPV4                                 IPV6                             TYPE        SNAPSHOTS 
+ spike-authz-probe  RUNNING  10.55.156.248 (eth0)    fd42:eb1e:5a09:f8d2:1266:6aff:fe73:5df4 (eth0)    CONTAINER (APP)  0         
+ spike-guest-a      RUNNING  10.55.156.150 (enp5s0)  fd42:eb1e:5a09:f8d2:1266:6aff:feb4:f1b9 (enp5s0)  VIRTUAL-MACHINE  0         
+ spike-guest-b      RUNNING  10.55.156.75 (enp5s0)   fd42:eb1e:5a09:f8d2:1266:6aff:fe27:54c0 (enp5s0)  VIRTUAL-MACHINE  0         
+
+--- guest B redeems the still-UNUSED nonce of the deleted instance
+source: staged payload /root/p8/e-payload.json (the guest socket was not read)
+payload: nonce_id=1c2b7f928923855f61aed718fbd4b21d
+payload: sha256=d40b1401041caa1d1189c7c4e911b8e633085e55c12ae94622f28c4774a34eb8
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=1c2b7f928923855f61aed718fbd4b21d claimed_instance_uuid=-
+redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+redeem: HTTP 409
+verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+         forbids redemption: already consumed, expired, bound to another instance, or the
+         generation moved (a snapshot restore). Single use is enforced server-side by one
+         compare-and-set; the guest cannot clear the key.
+RESULT mode=redeem outcome=rejected status=409 nonce_id=1c2b7f928923855f61aed718fbd4b21d reason=conflict

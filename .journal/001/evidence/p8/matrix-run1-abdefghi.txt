@@ -1,0 +1,408 @@
+=== started 2026-08-17T03:55:56Z
+
+=== preflight
+remote:            ovh-incusos
+project:           spike-spiffe
+guest A:           spike-guest-a (volatile.uuid=a955ca30-a0dc-4087-a369-37d53d389c5a)
+guest B:           spike-guest-b (volatile.uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338)
+broker:            https://10.55.156.44:8443 (mint /v1alpha1/nonce, redeem /v1alpha1/redeem)
+bootstrap key:     user.spiffe-bootstrap
+guest staging dir: /root/p8
+cases:             a b d e f g h i
+strict status:     1
+
+=== case a — positive mint then redeem (P8 step 4)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=e12c530149625b99457277f524e3fc6f
+    [mint]   expires_at=2026-08-17T04:05:57.797589074Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=e12c530149625b99457277f524e3fc6f expires_at=2026-08-17T04:05:57.797589074Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+    minted nonce_id=e12c530149625b99457277f524e3fc6f expires_at=2026-08-17T04:05:57.797589074Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+--- guest A reads its own bootstrap key
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=e12c530149625b99457277f524e3fc6f
+    [spike-guest-a] payload: sha256=73b68e5ec3ea516430e1b045154fda1ba7c32b5ee35c52536dc5b70fdc5ba1b6
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] staged: wrote the raw payload to /root/p8/a-payload.json (mode 0600, root only)
+    [spike-guest-a] RESULT mode=fetch outcome=ok source=socket nonce_id=e12c530149625b99457277f524e3fc6f payload_sha256=73b68e5ec3ea516430e1b045154fda1ba7c32b5ee35c52536dc5b70fdc5ba1b6 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+--- guest A redeems through its own socket
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=e12c530149625b99457277f524e3fc6f
+    [spike-guest-a] payload: sha256=73b68e5ec3ea516430e1b045154fda1ba7c32b5ee35c52536dc5b70fdc5ba1b6
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] broker: host=10.55.156.44 port=8443
+    [spike-guest-a] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-a] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=e12c530149625b99457277f524e3fc6f claimed_instance_uuid=-
+    [spike-guest-a] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-a] redeem: HTTP 200
+    [spike-guest-a] verdict: GRANTED 200
+    [spike-guest-a]   resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-a]   resolved_instance_name=spike-guest-a
+    [spike-guest-a]   resolved_generation=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-a]   project=spike-spiffe
+    [spike-guest-a]   selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    [spike-guest-a] RESULT mode=redeem outcome=granted status=200 nonce_id=e12c530149625b99457277f524e3fc6f instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+PASS  case a: guest A redeemed its own nonce (e12c530149625b99457277f524e3fc6f) through /dev/incus/sock, HTTP 200, selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+--- the broker should have cleared the key after consuming it
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 404
+    [spike-guest-a] RESULT mode=fetch outcome=error socket_status=404 nonce_id=-
+    [spike-guest-a] ERROR: user.spiffe-bootstrap is not set on this instance (HTTP 404): no nonce has been minted for it
+    key cleared: the guest read now fails, as designed
+
+=== case b — second redemption of the same nonce is rejected (P8 step 4)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=0b4401b37bac469b259107aa49839ddc
+    [mint]   expires_at=2026-08-17T04:05:58.378557041Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=0b4401b37bac469b259107aa49839ddc expires_at=2026-08-17T04:05:58.378557041Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+    minted nonce_id=0b4401b37bac469b259107aa49839ddc expires_at=2026-08-17T04:05:58.378557041Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+--- stage the payload inside guest A, then redeem once
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=0b4401b37bac469b259107aa49839ddc
+    [spike-guest-a] payload: sha256=84c10013616ee219027aad4bb9356310028ff6137b28d4843ae47275b96b7c9f
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] staged: wrote the raw payload to /root/p8/b-payload.json (mode 0600, root only)
+    [spike-guest-a] RESULT mode=fetch outcome=ok source=socket nonce_id=0b4401b37bac469b259107aa49839ddc payload_sha256=84c10013616ee219027aad4bb9356310028ff6137b28d4843ae47275b96b7c9f broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] source: staged payload /root/p8/b-payload.json (the guest socket was not read)
+    [spike-guest-a] payload: nonce_id=0b4401b37bac469b259107aa49839ddc
+    [spike-guest-a] payload: sha256=84c10013616ee219027aad4bb9356310028ff6137b28d4843ae47275b96b7c9f
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] broker: host=10.55.156.44 port=8443
+    [spike-guest-a] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-a] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=0b4401b37bac469b259107aa49839ddc claimed_instance_uuid=-
+    [spike-guest-a] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-a] redeem: HTTP 200
+    [spike-guest-a] verdict: GRANTED 200
+    [spike-guest-a]   resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-a]   resolved_instance_name=spike-guest-a
+    [spike-guest-a]   resolved_generation=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-a]   project=spike-spiffe
+    [spike-guest-a]   selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    [spike-guest-a] RESULT mode=redeem outcome=granted status=200 nonce_id=0b4401b37bac469b259107aa49839ddc instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+--- redeem the very same nonce a second time
+    [spike-guest-a] source: staged payload /root/p8/b-payload.json (the guest socket was not read)
+    [spike-guest-a] payload: nonce_id=0b4401b37bac469b259107aa49839ddc
+    [spike-guest-a] payload: sha256=84c10013616ee219027aad4bb9356310028ff6137b28d4843ae47275b96b7c9f
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] broker: host=10.55.156.44 port=8443
+    [spike-guest-a] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-a] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=0b4401b37bac469b259107aa49839ddc claimed_instance_uuid=-
+    [spike-guest-a] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-a] redeem: HTTP 409
+    [spike-guest-a] verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+    [spike-guest-a]          forbids redemption: already consumed, expired, bound to another instance, or the
+    [spike-guest-a]          generation moved (a snapshot restore). Single use is enforced server-side by one
+    [spike-guest-a]          compare-and-set; the guest cannot clear the key.
+    [spike-guest-a] RESULT mode=redeem outcome=rejected status=409 nonce_id=0b4401b37bac469b259107aa49839ddc reason=conflict
+PASS  case b: the second redemption of 0b4401b37bac469b259107aa49839ddc was rejected with HTTP 409
+
+=== case d — two CONCURRENT redemptions yield exactly one success (P8 step 4)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=5358a817a0c2aceed01675f565e1a514
+    [mint]   expires_at=2026-08-17T04:05:59.008015609Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=5358a817a0c2aceed01675f565e1a514 expires_at=2026-08-17T04:05:59.008015609Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+    minted nonce_id=5358a817a0c2aceed01675f565e1a514 expires_at=2026-08-17T04:05:59.008015609Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+--- stage the payload inside guest A
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=5358a817a0c2aceed01675f565e1a514
+    [spike-guest-a] payload: sha256=4d8b9e83cad630a635dfeea0dde9104730fb5348da60f239ab4c18911285d23a
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] staged: wrote the raw payload to /root/p8/d-payload.json (mode 0600, root only)
+    [spike-guest-a] RESULT mode=fetch outcome=ok source=socket nonce_id=5358a817a0c2aceed01675f565e1a514 payload_sha256=4d8b9e83cad630a635dfeea0dde9104730fb5348da60f239ab4c18911285d23a broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+--- fire both redemptions as background jobs
+    [A#1] source: staged payload /root/p8/d-payload.json (the guest socket was not read)
+    [A#1] payload: nonce_id=5358a817a0c2aceed01675f565e1a514
+    [A#1] payload: sha256=4d8b9e83cad630a635dfeea0dde9104730fb5348da60f239ab4c18911285d23a
+    [A#1] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [A#1] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [A#1] payload: nonce=<redacted, present>
+    [A#1] broker: host=10.55.156.44 port=8443
+    [A#1] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [A#1] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [A#1] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=5358a817a0c2aceed01675f565e1a514 claimed_instance_uuid=-
+    [A#1] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [A#1] redeem: HTTP 200
+    [A#1] verdict: GRANTED 200
+    [A#1]   resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [A#1]   resolved_instance_name=spike-guest-a
+    [A#1]   resolved_generation=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [A#1]   project=spike-spiffe
+    [A#1]   selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    [A#1] RESULT mode=redeem outcome=granted status=200 nonce_id=5358a817a0c2aceed01675f565e1a514 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    [A#2] source: staged payload /root/p8/d-payload.json (the guest socket was not read)
+    [A#2] payload: nonce_id=5358a817a0c2aceed01675f565e1a514
+    [A#2] payload: sha256=4d8b9e83cad630a635dfeea0dde9104730fb5348da60f239ab4c18911285d23a
+    [A#2] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [A#2] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [A#2] payload: nonce=<redacted, present>
+    [A#2] broker: host=10.55.156.44 port=8443
+    [A#2] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [A#2] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [A#2] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=5358a817a0c2aceed01675f565e1a514 claimed_instance_uuid=-
+    [A#2] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [A#2] redeem: HTTP 409
+    [A#2] verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+    [A#2]          forbids redemption: already consumed, expired, bound to another instance, or the
+    [A#2]          generation moved (a snapshot restore). Single use is enforced server-side by one
+    [A#2]          compare-and-set; the guest cannot clear the key.
+    [A#2] RESULT mode=redeem outcome=rejected status=409 nonce_id=5358a817a0c2aceed01675f565e1a514 reason=conflict
+    attempt 1: exit 0 HTTP 200
+    attempt 2: exit 11 HTTP 409
+PASS  case d: exactly one of two concurrent redemptions of 5358a817a0c2aceed01675f565e1a514 succeeded (HTTP 200 / 409)
+
+=== case e — nonce for a DELETED instance is rejected (P8 step 4)
+--- creating the disposable instance spike-guest-tmp (container, images:debian/13)
+    spike-guest-tmp volatile.uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728 project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=b962f5ca6cd1c52a2950e29d1eaab4dd
+    [mint]   expires_at=2026-08-17T04:06:00.4307941Z
+    [mint]   instance_name=spike-guest-tmp
+    [mint]   generation_uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728
+    [mint]   instance_uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=b962f5ca6cd1c52a2950e29d1eaab4dd expires_at=2026-08-17T04:06:00.4307941Z instance_name=spike-guest-tmp generation_uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728 instance_uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728 project=spike-spiffe
+    minted nonce_id=b962f5ca6cd1c52a2950e29d1eaab4dd expires_at=2026-08-17T04:06:00.4307941Z instance_name=spike-guest-tmp generation_uuid=88cfc654-b49f-4d5c-8db1-ba15cc4a5728
+--- stage the payload inside the disposable instance, then pipe it into guest B
+    [spike-guest-tmp] ERROR: jq not found: jq (override with JQ_BIN)
+FAIL  case e: setup: spike-guest-tmp could not read its bootstrap key (exit 2)
+
+=== case f — nonce invalidated when volatile.uuid.generation changes (P8 step 4)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=5f2b0470fd3521c98dfeff4cdac9e921
+    [mint]   expires_at=2026-08-17T04:06:00.650138553Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=5f2b0470fd3521c98dfeff4cdac9e921 expires_at=2026-08-17T04:06:00.650138553Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+    minted nonce_id=5f2b0470fd3521c98dfeff4cdac9e921 expires_at=2026-08-17T04:06:00.650138553Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    generation before: a955ca30-a0dc-4087-a369-37d53d389c5a
+--- stage the payload, then stash it in guest B so it survives the restore
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=5f2b0470fd3521c98dfeff4cdac9e921
+    [spike-guest-a] payload: sha256=d2862f4aca7a6e9c78a36aded006db4932b7971226373e4fbb2ba4451b32d967
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] staged: wrote the raw payload to /root/p8/f-payload.json (mode 0600, root only)
+    [spike-guest-a] RESULT mode=fetch outcome=ok source=socket nonce_id=5f2b0470fd3521c98dfeff4cdac9e921 payload_sha256=d2862f4aca7a6e9c78a36aded006db4932b7971226373e4fbb2ba4451b32d967 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+--- snapshot and restore guest A as p8-generation-478
+    generation after:  d79b19ff-549c-4809-be8a-94822a41f506
+--- pipe the pre-restore payload back into guest A and redeem it
+    [spike-guest-a] source: staged payload /root/p8/f-payload.json (the guest socket was not read)
+    [spike-guest-a] payload: nonce_id=5f2b0470fd3521c98dfeff4cdac9e921
+    [spike-guest-a] payload: sha256=d2862f4aca7a6e9c78a36aded006db4932b7971226373e4fbb2ba4451b32d967
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] broker: host=10.55.156.44 port=8443
+    [spike-guest-a] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-a] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=5f2b0470fd3521c98dfeff4cdac9e921 claimed_instance_uuid=-
+    [spike-guest-a] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-a] redeem: HTTP 409
+    [spike-guest-a] verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+    [spike-guest-a]          forbids redemption: already consumed, expired, bound to another instance, or the
+    [spike-guest-a]          generation moved (a snapshot restore). Single use is enforced server-side by one
+    [spike-guest-a]          compare-and-set; the guest cannot clear the key.
+    [spike-guest-a] RESULT mode=redeem outcome=rejected status=409 nonce_id=5f2b0470fd3521c98dfeff4cdac9e921 reason=conflict
+PASS  case f: the generation change (a955ca30-a0dc-4087-a369-37d53d389c5a -> d79b19ff-549c-4809-be8a-94822a41f506) invalidated the nonce; HTTP 409
+
+=== case g — guest B cannot read A's nonce through its own socket (P8 step 5)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=f9100c624e9c09729ffb381668ec4ef1
+    [mint]   expires_at=2026-08-17T04:06:15.47313547Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=f9100c624e9c09729ffb381668ec4ef1 expires_at=2026-08-17T04:06:15.47313547Z instance_name=spike-guest-a generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+    minted nonce_id=f9100c624e9c09729ffb381668ec4ef1 expires_at=2026-08-17T04:06:15.47313547Z instance_name=spike-guest-a generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506
+--- guest A reads its key, for the digest to compare against
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=f9100c624e9c09729ffb381668ec4ef1
+    [spike-guest-a] payload: sha256=d36e0f66b34f705552c1ba1e859bba75f4e5a4b1b8c41f60ba78019c42a108d4
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] RESULT mode=fetch outcome=ok source=socket nonce_id=f9100c624e9c09729ffb381668ec4ef1 payload_sha256=d36e0f66b34f705552c1ba1e859bba75f4e5a4b1b8c41f60ba78019c42a108d4 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    A payload sha256=d36e0f66b34f705552c1ba1e859bba75f4e5a4b1b8c41f60ba78019c42a108d4 (digests are permitted in evidence; values are not)
+--- guest B attempts the same read through its own /dev/incus/sock
+    [spike-guest-b] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 404
+    [spike-guest-b] RESULT mode=fetch outcome=error socket_status=404 nonce_id=-
+    [spike-guest-b] ERROR: user.spiffe-bootstrap is not set on this instance (HTTP 404): no nonce has been minted for it
+PASS  case g: guest B's socket exposes no user.spiffe-bootstrap (HTTP 404); A's nonce is unreachable from B
+
+=== case h — guest B claims A's UUID with B's own nonce (P8 step 5)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=a5aa7b11c436d6eba25da55979a8b9b8
+    [mint]   expires_at=2026-08-17T04:06:15.882927892Z
+    [mint]   instance_name=spike-guest-b
+    [mint]   generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+    [mint]   instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=a5aa7b11c436d6eba25da55979a8b9b8 expires_at=2026-08-17T04:06:15.882927892Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe
+    minted nonce_id=a5aa7b11c436d6eba25da55979a8b9b8 expires_at=2026-08-17T04:06:15.882927892Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+--- guest B redeems its own nonce while claiming instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-b] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-b] payload: nonce_id=a5aa7b11c436d6eba25da55979a8b9b8
+    [spike-guest-b] payload: sha256=d56d40f08343418532d1a7673f4046cb5351ee2e475774b7f10345bd79acf737
+    [spike-guest-b] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-b] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-b] payload: nonce=<redacted, present>
+    [spike-guest-b] broker: host=10.55.156.44 port=8443
+    [spike-guest-b] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-b] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-b] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=a5aa7b11c436d6eba25da55979a8b9b8 claimed_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-b] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-b] redeem: HTTP 200
+    [spike-guest-b] verdict: GRANTED 200
+    [spike-guest-b]   resolved_instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+    [spike-guest-b]   resolved_instance_name=spike-guest-b
+    [spike-guest-b]   resolved_generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+    [spike-guest-b]   project=spike-spiffe
+    [spike-guest-b]   selectors=incus:uuid:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:generation:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-b,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    [spike-guest-b] RESULT mode=redeem outcome=granted status=200 nonce_id=a5aa7b11c436d6eba25da55979a8b9b8 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_name=spike-guest-b generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe spiffe_id=- selectors=incus:uuid:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:generation:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-b,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+PASS  case h: the claimed UUID was ignored; the broker resolved only B (instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338, instance_name=spike-guest-b, selectors=incus:uuid:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:generation:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-b,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7)
+
+=== case i — MEASURING A KNOWN LIMITATION: leaked unused A nonce used from B (P8 step 5)
+This case is expected to SUCCEED. An unused nonce is a bearer credential; a success here is
+the recorded bearer-token risk and a go/no-go input, not a bug and not a run failure.
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=492f308af40d3d50c73d1076a54b508d
+    [mint]   expires_at=2026-08-17T04:06:16.256846756Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=492f308af40d3d50c73d1076a54b508d expires_at=2026-08-17T04:06:16.256846756Z instance_name=spike-guest-a generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+--- stage A's payload, then pipe it into guest B — the deliberate leak
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=492f308af40d3d50c73d1076a54b508d
+    [spike-guest-a] payload: sha256=3962c25125b8179e0141c9e061f2abb33e76795084b700ce8334d88320aa75b2
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] staged: wrote the raw payload to /root/p8/i-payload.json (mode 0600, root only)
+    [spike-guest-a] RESULT mode=fetch outcome=ok source=socket nonce_id=492f308af40d3d50c73d1076a54b508d payload_sha256=3962c25125b8179e0141c9e061f2abb33e76795084b700ce8334d88320aa75b2 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+--- guest B redeems A's unused nonce
+    [spike-guest-b] source: staged payload /root/p8/i-payload.json (the guest socket was not read)
+    [spike-guest-b] payload: nonce_id=492f308af40d3d50c73d1076a54b508d
+    [spike-guest-b] payload: sha256=3962c25125b8179e0141c9e061f2abb33e76795084b700ce8334d88320aa75b2
+    [spike-guest-b] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-b] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-b] payload: nonce=<redacted, present>
+    [spike-guest-b] broker: host=10.55.156.44 port=8443
+    [spike-guest-b] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-b] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-b] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=492f308af40d3d50c73d1076a54b508d claimed_instance_uuid=-
+    [spike-guest-b] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-b] redeem: HTTP 200
+    [spike-guest-b] verdict: GRANTED 200
+    [spike-guest-b]   resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [spike-guest-b]   resolved_instance_name=spike-guest-a
+    [spike-guest-b]   resolved_generation=d79b19ff-549c-4809-be8a-94822a41f506
+    [spike-guest-b]   project=spike-spiffe
+    [spike-guest-b]   selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    [spike-guest-b] RESULT mode=redeem outcome=granted status=200 nonce_id=492f308af40d3d50c73d1076a54b508d instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=d79b19ff-549c-4809-be8a-94822a41f506 project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+MEASURED  case i: CONFIRMED bearer-token risk: B redeemed A's leaked nonce and received A's identity (instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a, instance_name=spike-guest-a, selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7, HTTP 200). Expected per SPIKE_PLAN.md P8 step 5; go/no-go input.
+
+=== summary
+measurements (never affect the exit status):
+  MEASURED  case i: CONFIRMED bearer-token risk: B redeemed A's leaked nonce and received A's identity (instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a, instance_name=spike-guest-a, selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7, HTTP 200). Expected per SPIKE_PLAN.md P8 step 5; go/no-go input.
+failures:
+  FAIL  case e: setup: spike-guest-tmp could not read its bootstrap key (exit 2)
+
+verdict: 1 case(s) misbehaved
+
+=== cleanup (runs on abort too: P8 requires config keys cleared either way)
+cleared user.spiffe-bootstrap on spike-guest-a
+cleared user.spiffe-bootstrap on spike-guest-b
+deleted snapshot p8-generation-478
+deleted spike-guest-tmp
+removed /root/p8 in spike-guest-a (it held nonce payloads)
+removed /root/p8 in spike-guest-b (it held nonce payloads)
+could not remove /root/p8 in spike-guest-tmp — it holds nonce payloads, clear it by hand
+=== lifecycle-matrix exit: 1
+=== finished 2026-08-17T03:56:17Z

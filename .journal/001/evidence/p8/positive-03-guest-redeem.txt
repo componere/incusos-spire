@@ -1,0 +1,21 @@
+=== date: 2026-08-17T03:55:13Z host=spike-guest-a
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=72c9cd50d98a862105f5d6e08552916a
+payload: sha256=71e791562f0891cfbac13b47d94fd8ea8208691babf422593a12000bda77d4ee
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=72c9cd50d98a862105f5d6e08552916a claimed_instance_uuid=-
+redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED 200
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+RESULT mode=redeem outcome=granted status=200 nonce_id=72c9cd50d98a862105f5d6e08552916a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+=== exit: 0

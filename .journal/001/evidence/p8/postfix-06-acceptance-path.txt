@@ -1,0 +1,164 @@
+=== P8 post-hardening: the acceptance path, re-proven — 2026-08-17T04:57:35Z ===
+
+--- (a) positive mint and guest redemption on spike-guest-a ---
+request body:  {"instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe"}
+credential:    good
+HTTP status:   201
+WWW-Authenticate: 
+response body: {"nonce_id":"17d1aaefd4592da4643946b85a2fc51f","expires_at":"2026-08-17T05:07:36.175584592Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+response sha256: 3d0049240eaff8a7a3978e0bc3b9f2e279da5ed7dbde53c86d5559094636f694
+secret-bearing keys in answer: none
+
+  host view of the written key (value withheld: Appendix D):
+    payload field names: broker_fingerprint, broker_url, nonce, nonce_id
+    payload field count: 4
+    nonce_id:           17d1aaefd4592da4643946b85a2fc51f
+    broker_url:         https://10.55.156.44:8443/v1alpha1/redeem
+    broker_fingerprint: 7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    nonce field:        type=string length=64 value=<withheld: Appendix D>
+
+  guest A redeems through its own /dev/incus/sock:
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=17d1aaefd4592da4643946b85a2fc51f
+payload: sha256=7609b6047c664ae65e5b98168ff157e9b974d2ac470981aa329a8b74cdb0692c
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=17d1aaefd4592da4643946b85a2fc51f claimed_instance_uuid=-
+redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED 200
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=d79b19ff-549c-4809-be8a-94822a41f506
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+RESULT mode=redeem outcome=granted status=200 nonce_id=17d1aaefd4592da4643946b85a2fc51f instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=d79b19ff-549c-4809-be8a-94822a41f506 project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  exit status: 0
+
+  key state immediately afterwards:
+    host: cleared by the broker
+    guest socket: GET /1.0/config/user.spiffe-bootstrap -> HTTP 404
+
+--- (b) second redemption of the same nonce ---
+HTTP status:   201
+response body: {"nonce_id":"8be840ed146f34fba128379e7194f021","expires_at":"2026-08-17T05:07:55.500531533Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+
+  stage the payload inside the guest (mode 0600, never printed), then redeem twice:
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=8be840ed146f34fba128379e7194f021
+RESULT mode=fetch outcome=ok source=socket nonce_id=8be840ed146f34fba128379e7194f021 payload_sha256=cdf8acb094593bd0a800ba6848931b7bb58d1736fc7d9cde702cead7fe5f70c3 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+
+  first redemption:
+redeem: HTTP 200
+verdict: GRANTED 200
+RESULT mode=redeem outcome=granted status=200 nonce_id=8be840ed146f34fba128379e7194f021 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_name=spike-guest-a generation=d79b19ff-549c-4809-be8a-94822a41f506 project=spike-spiffe spiffe_id=- selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:d79b19ff-549c-4809-be8a-94822a41f506,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  exit status: 0
+
+  second redemption, byte-identical body:
+redeem: HTTP 409
+verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+RESULT mode=redeem outcome=rejected status=409 nonce_id=8be840ed146f34fba128379e7194f021 reason=conflict
+
+  broker's reason for the refusal:
+{"time":"2026-08-17T04:57:57.965384455Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"8be840ed146f34fba128379e7194f021","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:39278","http_status":409,"code":"conflict","reason":"nonce: consume nonce 8be840ed146f34fba128379e7194f021: nonce: nonce already used: id 8be840ed146f34fba128379e7194f021"}
+
+--- (c) two genuinely concurrent redemptions of one nonce, three rounds ---
+Two workers inside spike-guest-a spin on the same absolute wall-clock second
+and then POST, so the requests leave the guest microseconds apart.
+
+  round 1:
+    HTTP status:   201
+    response body: {"nonce_id":"506964f7452a0fdc2c28f94d73ae79a4","expires_at":"2026-08-17T05:08:21.232822095Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+    RESULT mode=fetch outcome=ok source=socket nonce_id=506964f7452a0fdc2c28f94d73ae79a4 payload_sha256=f9abff56cbc7167ddca3fa42b0b1116f73c49734005c60b3624af0af706c347a broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    worker=1 sent=04:58:23.002132715 status=409
+    worker=2 sent=04:58:23.001623264 status=200
+    successes=1 verdict=exactly one success
+
+  round 2:
+    HTTP status:   201
+    response body: {"nonce_id":"2a5fd302043f768f726e7075f46737d7","expires_at":"2026-08-17T05:08:26.174774534Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+    RESULT mode=fetch outcome=ok source=socket nonce_id=2a5fd302043f768f726e7075f46737d7 payload_sha256=3f2628bbbc1ad37ad6269f07828434402a67a8eaca5a3dee4bad848dd22aa0da broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    worker=1 sent=04:58:28.001886475 status=409
+    worker=2 sent=04:58:28.001382665 status=200
+    successes=1 verdict=exactly one success
+
+  round 3:
+    HTTP status:   201
+    response body: {"nonce_id":"03a3c3f2e7254b6fb8a5e7dc5a19442e","expires_at":"2026-08-17T05:08:31.147697598Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+    RESULT mode=fetch outcome=ok source=socket nonce_id=03a3c3f2e7254b6fb8a5e7dc5a19442e payload_sha256=400ea4b38407d2044dcd8cf25c7cf6aa9d645d1cdaf4d4bc6e6ba6ff5b7fe9e1 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    worker=1 sent=04:58:33.001340656 status=200
+    worker=2 sent=04:58:33.001845057 status=409
+    successes=1 verdict=exactly one success
+
+  broker log ordering for the three rounds — the loser's 409 lands before the
+  winner's 'bootstrap key cleared', i.e. used=true commits first and only then
+  is the instance key cleared:
+    {"time":"2026-08-17T04:58:21.245599496Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"506964f7452a0fdc2c28f94d73ae79a4","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","expires_at":"2026-08-17T05:08:21.232822095Z"}
+    {"time":"2026-08-17T04:58:25.354693603Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"506964f7452a0fdc2c28f94d73ae79a4","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:37702","http_status":409,"code":"conflict","reason":"nonce: consume nonce 506964f7452a0fdc2c28f94d73ae79a4: nonce: nonce already used: id 506964f7452a0fdc2c28f94d73ae79a4"}
+    {"time":"2026-08-17T04:58:25.365176747Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"506964f7452a0fdc2c28f94d73ae79a4","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+    {"time":"2026-08-17T04:58:25.367606645Z","level":"INFO","msg":"bootstrap nonce redeemed","operation":"redeem","outcome":"granted","nonce_id":"506964f7452a0fdc2c28f94d73ae79a4","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","http_status":200}
+    {"time":"2026-08-17T04:58:26.186983904Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"2a5fd302043f768f726e7075f46737d7","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","expires_at":"2026-08-17T05:08:26.174774534Z"}
+    {"time":"2026-08-17T04:58:30.350149958Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"2a5fd302043f768f726e7075f46737d7","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:46728","http_status":409,"code":"conflict","reason":"nonce: consume nonce 2a5fd302043f768f726e7075f46737d7: nonce: nonce already used: id 2a5fd302043f768f726e7075f46737d7"}
+    {"time":"2026-08-17T04:58:30.361264855Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"2a5fd302043f768f726e7075f46737d7","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+    {"time":"2026-08-17T04:58:30.363724823Z","level":"INFO","msg":"bootstrap nonce redeemed","operation":"redeem","outcome":"granted","nonce_id":"2a5fd302043f768f726e7075f46737d7","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","http_status":200}
+    {"time":"2026-08-17T04:58:31.159913658Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"03a3c3f2e7254b6fb8a5e7dc5a19442e","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","expires_at":"2026-08-17T05:08:31.147697598Z"}
+    {"time":"2026-08-17T04:58:35.350580005Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"03a3c3f2e7254b6fb8a5e7dc5a19442e","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","peer_address":"10.55.156.150:46748","http_status":409,"code":"conflict","reason":"nonce: consume nonce 03a3c3f2e7254b6fb8a5e7dc5a19442e: nonce: nonce already used: id 03a3c3f2e7254b6fb8a5e7dc5a19442e"}
+    {"time":"2026-08-17T04:58:35.361807711Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"03a3c3f2e7254b6fb8a5e7dc5a19442e","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","project":"spike-spiffe"}
+    {"time":"2026-08-17T04:58:35.36422019Z","level":"INFO","msg":"bootstrap nonce redeemed","operation":"redeem","outcome":"granted","nonce_id":"03a3c3f2e7254b6fb8a5e7dc5a19442e","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","http_status":200}
+
+--- (d) case h post-hardening: guest B presents B's own nonce and claims A's UUID ---
+HTTP status:   201
+response body: {"nonce_id":"f1b0e8d339a44e31ba20dc5d853d4d18","expires_at":"2026-08-17T05:08:53.91038135Z","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","generation":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe"}
+
+  B redeems, claiming A'\''s UUID a955ca30-a0dc-4087-a369-37d53d389c5a:
+    RESULT mode=fetch outcome=ok source=socket nonce_id=f1b0e8d339a44e31ba20dc5d853d4d18 payload_sha256=5066255d122268a3f1caaf351c302667892add4cc088cc37f260d9b6efb9d090 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=f1b0e8d339a44e31ba20dc5d853d4d18 claimed_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    redeem: HTTP 400
+    RESULT mode=redeem outcome=rejected status=400 nonce_id=f1b0e8d339a44e31ba20dc5d853d4d18 reason=invalid_request
+
+  follow-up: the same nonce without the claim:
+    redeem: HTTP 200
+      resolved_instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+      resolved_instance_name=spike-guest-b
+      resolved_generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+      selectors=incus:uuid:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:generation:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-b,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+    RESULT mode=redeem outcome=granted status=200 nonce_id=f1b0e8d339a44e31ba20dc5d853d4d18 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_name=spike-guest-b generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe spiffe_id=- selectors=incus:uuid:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:generation:a4fec3ea-d4aa-4e6c-94c6-8295cee62338,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-b,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+
+  key state on B:
+    host: cleared by the broker
+
+--- summary ---
+
+  case                                            result
+  a  positive mint + guest redemption on A        201 then 200, six frozen incus: selectors for A,
+                                                  key cleared on both the host and the guest socket
+  b  second redemption, identical body            409, "nonce: nonce already used"
+  c  two concurrent redemptions, three rounds     exactly one 200 every time
+
+     round  nonce_id                          worker 1 sent    worker 2 sent    delta   statuses
+     1      506964f7452a0fdc2c28f94d73ae79a4  04:58:23.002132  04:58:23.001623  509 us  409 / 200
+     2      2a5fd302043f768f726e7075f46737d7  04:58:28.001886  04:58:28.001382  504 us  409 / 200
+     3      03a3c3f2e7254b6fb8a5e7dc5a19442e  04:58:33.001340  04:58:33.001845  505 us  200 / 409
+
+     The winner moved from worker 2 to worker 1 in round 3, which is what a real
+     race looks like rather than a fixed ordering. Two successes never occurred.
+     The log ordering the plan requires still holds in all three rounds: the
+     loser's 409 is logged before the winner's "bootstrap key cleared", so
+     used=true commits first and a crash in between leaves a consumed value
+     rather than a live credential.
+
+  d  case h: B presents B's nonce, claims A's     400 invalid_request, "json: unknown field
+     UUID                                          \"instance_uuid\"" — the claim is refused before
+                                                   anything is resolved
+     same nonce, no claim                          200 resolving B, B's own six selectors
+
+     This is a CHANGE from the original run, which answered 200 and silently
+     discarded the claim. The security property is unchanged and slightly
+     stronger: a caller-supplied identity cannot decide a binding because it can
+     no longer be stated at all. B never obtained any part of A's identity in
+     either answer, and the refusal is not a denial of service — the same nonce
+     redeemed normally on the follow-up.

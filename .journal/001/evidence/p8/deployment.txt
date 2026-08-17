@@ -1,0 +1,76 @@
+=== P8 broker deployment record
+date=2026-08-17T04:00:17Z
+
+--- topology
+     NAME       STATE          IPV4                               IPV6                         TYPE     SNAPSHOTS 
+ spike-broker  RUNNING  10.55.156.44 (eth0)  fd42:eb1e:5a09:f8d2:1266:6aff:feed:6a0b (eth0)  CONTAINER  0         
+instance project: default (reaches incusbr0 and the Incus API on 147.135.105.83:8443)
+state volume:
+name: spike-broker-state
+type: custom
+  - /1.0/instances/spike-broker
+content_type: filesystem
+project: default
+created_at: 2026-08-17T03:50:42.747799094Z
+
+--- binary
+operator-side sha256: 40e3c1bf2be5aba9822fa38b97a7f47666b38384bd87aafce697a040f10d8c08
+in-container sha256: 40e3c1bf2be5aba9822fa38b97a7f47666b38384bd87aafce697a040f10d8c08
+path: /usr/local/bin/incus-spiffe-broker
+
+--- resolved configuration (environment file; no secret values, only paths)
+INCUS_SPIFFE_BROKER_LISTEN=:8443
+INCUS_SPIFFE_BROKER_TLS_CERT=/state/tls/broker.crt
+INCUS_SPIFFE_BROKER_TLS_KEY=/state/tls/broker.key
+INCUS_SPIFFE_BROKER_ADVERTISE_URL=https://10.55.156.44:8443
+INCUS_SPIFFE_BROKER_INCUS_URL=https://147.135.105.83:8443
+INCUS_SPIFFE_BROKER_INCUS_SERVER_FINGERPRINT=822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd
+INCUS_SPIFFE_BROKER_ATTESTOR_CERT=/state/incus/attestor.crt
+INCUS_SPIFFE_BROKER_ATTESTOR_KEY=/state/incus/attestor.key
+INCUS_SPIFFE_BROKER_BOOTSTRAP_CERT=/state/incus/bootstrap.crt
+INCUS_SPIFFE_BROKER_BOOTSTRAP_KEY=/state/incus/bootstrap.key
+INCUS_SPIFFE_BROKER_PROJECT=spike-spiffe
+INCUS_SPIFFE_BROKER_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_REQUEST_TIMEOUT=10s
+
+--- systemd unit
+[Unit]
+Description=incus-spiffe-broker (P8 spike)
+After=network-online.target
+
+[Service]
+EnvironmentFile=/state/broker.env
+ExecStart=/usr/local/bin/incus-spiffe-broker
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+
+--- TLS server certificate (spike root CA on volume spike-ca-state, issued for this phase)
+subject=CN=spike-broker
+issuer=O=incusos-spire spike, CN=spike root CA
+serial=598B7D5DDAB39F6C59C41DB9E69EBB7072C85FDD
+notBefore=Aug 17 03:51:44 2026 GMT
+notAfter=Sep 16 03:51:44 2026 GMT
+X509v3 Key Usage: critical
+    Digital Signature, Key Encipherment
+X509v3 Extended Key Usage: 
+    TLS Web Server Authentication
+X509v3 Subject Alternative Name: 
+    DNS:spike-broker, DNS:localhost, IP Address:10.55.156.44, IP Address:127.0.0.1
+leaf sha256 (the value guests pin): 7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+SPKI sha256 (curl --pinnedpubkey): sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+CA subject: subject=O=incusos-spire spike, CN=spike root CA
+CA sha256:  b057b3f2023413fdec184c6262e1de4d760d0943ffd677762adfb1a7510db1eb
+
+--- Incus credential split (P5 identities, distinct files enforced by options.validate)
+attestor cert fingerprint: 6ebaf5eb4cc9e003acb6a98ef7cdd24b1d2d7a00ef59f5fb9b654e3fa634db80
+attestor cert subject:     subject=CN=spike-attestor-ro, O=spike-incusos-spire
+bootstrap cert fingerprint: afd4f608e0f0e8aabce5e42a6dba33ca7ff3b76defad3f0e287f46c5136d9d84
+bootstrap cert subject:     subject=CN=spike-bootstrap-writer, O=spike-incusos-spire
+attestor.* = spike-attestor-ro   (read-only, project-confined to spike-spiffe)
+bootstrap.* = spike-bootstrap-writer (write-only, denied all reads)
+
+--- listening
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=481,fd=3)) 
+{"time":"2026-08-17T03:59:51.674020391Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","request_timeout":"10s"}

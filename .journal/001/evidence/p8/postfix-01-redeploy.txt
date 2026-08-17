@@ -1,0 +1,53 @@
+=== P8 post-hardening redeploy — 2026-08-17T04:45:29Z ===
+--- operator-side binary digest (macOS) ---
+c534af07c95ef333b1a09dabb75367c6f66ab5cc01b1b178dc6f81ee89afa741  /tmp/incus-spiffe-broker-linux
+--- stop the running (stale) service ---
+inactive
+--- push the hardened binary ---
+--- deployed digest, computed INSIDE the container ---
+c534af07c95ef333b1a09dabb75367c6f66ab5cc01b1b178dc6f81ee89afa741  /usr/local/bin/incus-spiffe-broker
+expected: c534af07c95ef333b1a09dabb75367c6f66ab5cc01b1b178dc6f81ee89afa741
+
+(push progress lines removed for legibility; the push completed at 100%)
+
+--- generate the operator mint token INSIDE the broker container (value never printed) ---
+token file:      /state/auth/mint-token
+token length:    64 characters
+token sha256:    b611396fe3cdec41a79b1df4a7f48939d7822fc571923251581465beea70a172   <- digest only, per Appendix D
+total 10
+drwx------ 2 root root  3 Aug 17 04:45 .
+drwx--x--x 5 root root  6 Aug 17 04:45 ..
+-rw------- 1 root root 64 Aug 17 04:45 mint-token
+
+--- also stage a deliberately SHORT token for the startup-refusal test ---
+short token length: 16 characters (below the 32-character floor)
+
+--- restore a working configuration: /state/broker.env gains the hardened settings ---
+verbatim /state/broker.env (paths and durations only; no secret value in it):
+INCUS_SPIFFE_BROKER_LISTEN=:8443
+INCUS_SPIFFE_BROKER_TLS_CERT=/state/tls/broker.crt
+INCUS_SPIFFE_BROKER_TLS_KEY=/state/tls/broker.key
+INCUS_SPIFFE_BROKER_ADVERTISE_URL=https://10.55.156.44:8443
+INCUS_SPIFFE_BROKER_INCUS_URL=https://147.135.105.83:8443
+INCUS_SPIFFE_BROKER_INCUS_SERVER_FINGERPRINT=822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd
+INCUS_SPIFFE_BROKER_ATTESTOR_CERT=/state/incus/attestor.crt
+INCUS_SPIFFE_BROKER_ATTESTOR_KEY=/state/incus/attestor.key
+INCUS_SPIFFE_BROKER_BOOTSTRAP_CERT=/state/incus/bootstrap.crt
+INCUS_SPIFFE_BROKER_BOOTSTRAP_KEY=/state/incus/bootstrap.key
+INCUS_SPIFFE_BROKER_PROJECT=spike-spiffe
+INCUS_SPIFFE_BROKER_MINT_TOKEN_FILE=/state/auth/mint-token
+INCUS_SPIFFE_BROKER_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_MAX_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_REAP_INTERVAL=1m
+INCUS_SPIFFE_BROKER_REAP_TIMEOUT=30s
+INCUS_SPIFFE_BROKER_REAP_GRACE=2m
+INCUS_SPIFFE_BROKER_REQUEST_TIMEOUT=10s
+
+--- restart and confirm it listens again ---
+active
+--- startup log ---
+Started incus-spiffe-broker.service - incus-spiffe-broker (P8 spike).
+{"time":"2026-08-17T04:52:13.328082728Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+{"time":"2026-08-17T04:52:13.328218499Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+--- listener ---
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=643,fd=3)) 

@@ -1,0 +1,41 @@
+=== supplementary measurement — does a REJECTED redemption burn the nonce?
+date=2026-08-17T04:03:38Z
+Why: internal/nonce Redeem calls the atomic ConsumeOnce (which commits Used=true) and only
+then compares the consumed record against the live instance. A generation change should
+therefore consume the nonce, while a failure raised BEFORE the consume (case e's
+'attestor: instance not found') should leave it unconsumed. That difference decides whether
+a guest may safely retry after a transient rejection. It is measured here, not asserted.
+
+--- throwaway container spike-p8-gen volatile.uuid=16248573-e470-40ae-8245-59b28dce4c34
+generation before: 16248573-e470-40ae-8245-59b28dce4c34
+
+--- mint (run from inside the throwaway, which sits on incusbr0)
+mint: HTTP 201
+RESULT mint outcome=minted status=201 nonce_id=52a26ffd0180591b9ca2d48b946f837f expires_at=2026-08-17T04:13:39.314807019Z instance_name=spike-p8-gen generation_uuid=16248573-e470-40ae-8245-59b28dce4c34 instance_uuid=16248573-e470-40ae-8245-59b28dce4c34 project=spike-spiffe
+
+--- stage the payload before the snapshot so it survives the restore
+staged: wrote the raw payload to /root/p8/gen-payload.json (mode 0600, root only)
+RESULT mode=fetch outcome=ok source=socket nonce_id=52a26ffd0180591b9ca2d48b946f837f payload_sha256=4b8dcd696b81eab74247498e90d8ad66abd2a24f04ffcb5694f16a6c06559825 broker_url=https://10.55.156.44:8443/v1alpha1/redeem broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+
+--- snapshot / restore to install a fresh generation
+generation after:  6e78108c-c3ec-4026-a33d-aa3a5ccc63dd
+
+--- redemption attempt 1 (expect 409, generation changed)
+redeem: HTTP 409
+RESULT mode=redeem outcome=rejected status=409 nonce_id=52a26ffd0180591b9ca2d48b946f837f reason=conflict
+
+--- redemption attempt 2 (the reason tells us whether attempt 1 consumed the nonce)
+redeem: HTTP 409
+RESULT mode=redeem outcome=rejected status=409 nonce_id=52a26ffd0180591b9ca2d48b946f837f reason=conflict
+
+--- broker-side reasons
+{"time":"2026-08-17T04:03:39.325918586Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"52a26ffd0180591b9ca2d48b946f837f","instance_uuid":"16248573-e470-40ae-8245-59b28dce4c34","instance_name":"spike-p8-gen","generation":"16248573-e470-40ae-8245-59b28dce4c34","project":"spike-spiffe","expires_at":"2026-08-17T04:13:39.314807019Z"}
+{"time":"2026-08-17T04:03:52.448689445Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"52a26ffd0180591b9ca2d48b946f837f","instance_uuid":"16248573-e470-40ae-8245-59b28dce4c34","http_status":409,"code":"conflict","reason":"nonce: instance generation changed: nonce 52a26ffd0180591b9ca2d48b946f837f was minted for an earlier generation of 16248573-e470-40ae-8245-59b28dce4c34"}
+{"time":"2026-08-17T04:03:53.22934869Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"52a26ffd0180591b9ca2d48b946f837f","instance_uuid":"16248573-e470-40ae-8245-59b28dce4c34","http_status":409,"code":"conflict","reason":"nonce: consume nonce 52a26ffd0180591b9ca2d48b946f837f: nonce: nonce already used: id 52a26ffd0180591b9ca2d48b946f837f"}
+
+--- teardown of the supplementary throwaway
+spike-p8-gen deleted (its snapshot p8-burn went with it)
+       NAME          STATE            IPV4                                 IPV6                             TYPE        SNAPSHOTS 
+ spike-authz-probe  RUNNING  10.55.156.248 (eth0)    fd42:eb1e:5a09:f8d2:1266:6aff:fe73:5df4 (eth0)    CONTAINER (APP)  0         
+ spike-guest-a      RUNNING  10.55.156.150 (enp5s0)  fd42:eb1e:5a09:f8d2:1266:6aff:feb4:f1b9 (enp5s0)  VIRTUAL-MACHINE  0         
+ spike-guest-b      RUNNING  10.55.156.75 (enp5s0)   fd42:eb1e:5a09:f8d2:1266:6aff:fe27:54c0 (enp5s0)  VIRTUAL-MACHINE  0         

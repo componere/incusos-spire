@@ -1,0 +1,15 @@
+date=2026-08-17T03:54:41Z instance=spike-guest-a project=spike-spiffe
+visible user.* keys on the instance:
+  user.spiffe-bootstrap
+payload bytes (incl. CLI newline): 268
+payload sha256: 71e791562f0891cfbac13b47d94fd8ea8208691babf422593a12000bda77d4ee
+payload field names:
+  broker_fingerprint
+  broker_url
+  nonce
+  nonce_id
+payload field count: 4
+nonce_id:            72c9cd50d98a862105f5d6e08552916a
+broker_url:          https://10.55.156.44:8443/v1alpha1/redeem
+broker_fingerprint:  7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+nonce field:         type=string length=64 value=<withheld: Appendix D>

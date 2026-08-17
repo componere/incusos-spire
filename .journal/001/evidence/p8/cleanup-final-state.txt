@@ -1,0 +1,104 @@
+=== P8 cleanup and final state
+date=2026-08-17T04:00:49Z
+
+--- clear user.spiffe-bootstrap on every instance in both projects
+  default/spike-broker user.spiffe-bootstrap=<unset>
+  default/spike-p3-stage user.spiffe-bootstrap=<unset>
+  default/spike-p8-operator user.spiffe-bootstrap=<unset>
+  default/spike-probe user.spiffe-bootstrap=<unset>
+  default/spire-agent user.spiffe-bootstrap=<unset>
+  default/spire-server user.spiffe-bootstrap=<unset>
+  spike-spiffe/spike-authz-probe user.spiffe-bootstrap=<unset>
+  spike-spiffe/spike-guest-a user.spiffe-bootstrap=<unset>
+  spike-spiffe/spike-guest-b user.spiffe-bootstrap=<unset>
+
+--- remove guest staging directories (they held nonce payloads)
+  spike-guest-a: /root/p8 removed -> ls: cannot access '/root/p8': No such file or directory
+absent
+  spike-guest-b: /root/p8 removed -> ls: cannot access '/root/p8': No such file or directory
+absent
+
+--- delete the throwaway operator container (it held a copy of the operator Incus client key)
+  spike-p8-operator deleted
+--- remove the broker cert scratch from spike-p3-stage (it held the broker private key)
+  /tmp/brokercert removed
+
+--- snapshots (case f snapshot must be gone; guests keep none)
+  spike-guest-a snapshots: []
+  spike-guest-b snapshots: []
+
+--- instances, both projects
+      NAME        STATE           IPV4                               IPV6                            TYPE        SNAPSHOTS 
+ spike-broker    RUNNING  10.55.156.44 (eth0)   fd42:eb1e:5a09:f8d2:1266:6aff:feed:6a0b (eth0)  CONTAINER        0         
+ spike-p3-stage  RUNNING  10.55.156.36 (eth0)   fd42:eb1e:5a09:f8d2:1266:6aff:fef3:87bb (eth0)  CONTAINER (APP)  0         
+ spike-probe     RUNNING  10.55.156.233 (eth0)  fd42:eb1e:5a09:f8d2:1266:6aff:fe48:5d36 (eth0)  CONTAINER (APP)  0         
+ spire-agent     RUNNING  10.55.156.104 (eth0)  fd42:eb1e:5a09:f8d2:1266:6aff:fee4:926c (eth0)  CONTAINER (APP)  0         
+ spire-server    RUNNING  10.55.156.67 (eth0)   fd42:eb1e:5a09:f8d2:1266:6aff:fea5:d759 (eth0)  CONTAINER (APP)  0         
+       NAME          STATE            IPV4                                 IPV6                             TYPE        SNAPSHOTS 
+ spike-authz-probe  RUNNING  10.55.156.248 (eth0)    fd42:eb1e:5a09:f8d2:1266:6aff:fe73:5df4 (eth0)    CONTAINER (APP)  0         
+ spike-guest-a      RUNNING  10.55.156.150 (enp5s0)  fd42:eb1e:5a09:f8d2:1266:6aff:feb4:f1b9 (enp5s0)  VIRTUAL-MACHINE  0         
+ spike-guest-b      RUNNING  10.55.156.75 (enp5s0)   fd42:eb1e:5a09:f8d2:1266:6aff:fe27:54c0 (enp5s0)  VIRTUAL-MACHINE  0         
+
+--- guests A and B identity unchanged / still running
+  spike-guest-a uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=d79b19ff-549c-4809-be8a-94822a41f506
+  spike-guest-b uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+
+--- spike-authz-probe untouched (P5/P7 depend on it)
+  uuid=6d1c5ee3-5b2f-4ead-8e54-db985302fbdb generation=6d1c5ee3-5b2f-4ead-8e54-db985302fbdb
+
+--- SPIRE server: attested agents and entries
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 04:35:40 +0000 UTC
+Serial number     : 103004801269518397781309851070168531405
+Can re-attest     : true
+Agent version     : 1.15.2
+
+Found 0 entries
+
+--- SPIRE agent health (from the neighbouring container spike-probe)
+/live -> 200
+/ready -> 200
+
+--- host security state (non-secret fields only; drive_recovery_keys, pool_recovery_keys and
+    config.encryption_recovery_keys exist in the raw response and are NEVER copied here)
+{"secure_boot_enabled":true,"encrypted_volumes":[{"state":"unlocked (TPM)","volume":"root"},{"state":"unlocked (TPM)","volume":"swap"}],"tpm_status":"ok","system_state_status":"system state is fully trusted","system_state_is_trusted":true}
+
+--- broker left RUNNING for P9 (see Handoff): active
+no TPM command, no reboot, no 'incus admin os' mutation, no change to spire-server/spire-agent
+or their volumes, no code-worktree change, no repository gate, no Git command.
+
+--- post-scan close-out (the secret scan minted one control nonce for guest A)
+date=2026-08-17T04:10:25Z
+control nonce 4f4022e306b277a700c960be3f5097ac: left UNREDEEMED; its instance key is now cleared
+  default/spike-broker user.spiffe-bootstrap=<unset>
+  default/spike-p3-stage user.spiffe-bootstrap=<unset>
+  default/spike-probe user.spiffe-bootstrap=<unset>
+  default/spire-agent user.spiffe-bootstrap=<unset>
+  default/spire-server user.spiffe-bootstrap=<unset>
+  spike-spiffe/spike-authz-probe user.spiffe-bootstrap=<unset>
+  spike-spiffe/spike-guest-a user.spiffe-bootstrap=<unset>
+  spike-spiffe/spike-guest-b user.spiffe-bootstrap=<unset>
+guest A staging and scan directories:
+    ls: cannot access '/root/p8': No such file or directory
+    ls: cannot access '/root/scan': No such file or directory
+guest A socket view: []
+guest B socket view: []
+
+final instance inventory:
+      NAME        STATE           IPV4                               IPV6                            TYPE        SNAPSHOTS 
+ spike-broker    RUNNING  10.55.156.44 (eth0)   fd42:eb1e:5a09:f8d2:1266:6aff:feed:6a0b (eth0)  CONTAINER        0         
+ spike-p3-stage  RUNNING  10.55.156.36 (eth0)   fd42:eb1e:5a09:f8d2:1266:6aff:fef3:87bb (eth0)  CONTAINER (APP)  0         
+ spike-probe     RUNNING  10.55.156.233 (eth0)  fd42:eb1e:5a09:f8d2:1266:6aff:fe48:5d36 (eth0)  CONTAINER (APP)  0         
+ spire-agent     RUNNING  10.55.156.104 (eth0)  fd42:eb1e:5a09:f8d2:1266:6aff:fee4:926c (eth0)  CONTAINER (APP)  0         
+ spire-server    RUNNING  10.55.156.67 (eth0)   fd42:eb1e:5a09:f8d2:1266:6aff:fea5:d759 (eth0)  CONTAINER (APP)  0         
+       NAME          STATE            IPV4                                 IPV6                             TYPE        SNAPSHOTS 
+ spike-authz-probe  RUNNING  10.55.156.248 (eth0)    fd42:eb1e:5a09:f8d2:1266:6aff:fe73:5df4 (eth0)    CONTAINER (APP)  0         
+ spike-guest-a      RUNNING  10.55.156.150 (enp5s0)  fd42:eb1e:5a09:f8d2:1266:6aff:feb4:f1b9 (enp5s0)  VIRTUAL-MACHINE  0         
+ spike-guest-b      RUNNING  10.55.156.75 (enp5s0)   fd42:eb1e:5a09:f8d2:1266:6aff:fe27:54c0 (enp5s0)  VIRTUAL-MACHINE  0         
+broker: active
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0

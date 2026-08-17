@@ -1,0 +1,104 @@
+=== P8 post-hardening: mint endpoint authentication — 2026-08-17T04:53:12Z ===
+
+Driven from spike-probe (10.55.156.233) on incusbr0. The operator token is
+spliced into a mode-0600 curl --config file and never reaches argv.
+
+log marker: 2026-08-17 04:53:12
+
+--- (1) no Authorization header ---
+request body:  {"instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe"}
+credential:    none
+HTTP status:   401
+WWW-Authenticate: www-authenticate: Bearer realm="incus-spiffe-broker"
+response body: {"error":"unauthorized"}
+response sha256: 3341bff062d83e3afeb943f83bbb079f5b45cc050e796ec282dde50b5906cb31
+secret-bearing keys in answer: none
+
+--- (2) wrong token (64 zeros, correct length, wrong value) ---
+request body:  {"instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe"}
+credential:    wrong
+HTTP status:   401
+WWW-Authenticate: www-authenticate: Bearer realm="incus-spiffe-broker"
+response body: {"error":"unauthorized"}
+response sha256: 3341bff062d83e3afeb943f83bbb079f5b45cc050e796ec282dde50b5906cb31
+secret-bearing keys in answer: none
+
+--- (3) correct token ---
+request body:  {"instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","project":"spike-spiffe"}
+credential:    good
+HTTP status:   201
+WWW-Authenticate: 
+response body: {"nonce_id":"683ff6d98cfa3facb8482b912cfdf3ae","expires_at":"2026-08-17T05:03:14.645775398Z","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe"}
+response sha256: 957656f82805342638fed94f5bb660c80f6c0d0a988b0c98d538b32a8f630ede
+secret-bearing keys in answer: none
+
+--- (4) differential proof that the 401 never reached the Incus read path ---
+A UUID that resolves to no instance. If the read had run, the answer would be
+409 conflict from attestor: instance not found — which is exactly what the
+authenticated request gets.
+
+  unauthenticated, nonexistent UUID:
+    request body:  {"instance_uuid":"00000000-0000-4000-8000-000000000000","project":"spike-spiffe"}
+    credential:    none
+    HTTP status:   401
+    WWW-Authenticate: www-authenticate: Bearer realm="incus-spiffe-broker"
+    response body: {"error":"unauthorized"}
+    response sha256: 3341bff062d83e3afeb943f83bbb079f5b45cc050e796ec282dde50b5906cb31
+    secret-bearing keys in answer: none
+
+  authenticated, same nonexistent UUID:
+    request body:  {"instance_uuid":"00000000-0000-4000-8000-000000000000","project":"spike-spiffe"}
+    credential:    good
+    HTTP status:   409
+    WWW-Authenticate: 
+    response body: {"error":"conflict"}
+    response sha256: f8fafcefbfe6586df99851291950c7226fc01c384eee0e4262618a6d06d4881c
+    secret-bearing keys in answer: none
+
+--- (5) the check also precedes decoding: malformed JSON without a token ---
+  unauthenticated, body is not JSON:
+    request body:  not json at all
+    credential:    none
+    HTTP status:   401
+    WWW-Authenticate: www-authenticate: Bearer realm="incus-spiffe-broker"
+    response body: {"error":"unauthorized"}
+    response sha256: 3341bff062d83e3afeb943f83bbb079f5b45cc050e796ec282dde50b5906cb31
+    secret-bearing keys in answer: none
+
+  authenticated, same malformed body — now the decoder gets to speak:
+    request body:  not json at all
+    credential:    good
+    HTTP status:   400
+    WWW-Authenticate: 
+    response body: {"error":"invalid_request"}
+    response sha256: e7316a421dd2538cb55696b15062462d0689c695d94f454350935a6f2e3b44ef
+    secret-bearing keys in answer: none
+
+--- broker log for this whole window ---
+{"time":"2026-08-17T04:53:13.053450804Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.233:35336","http_status":401,"code":"unauthorized","reason":"operator bearer token missing or not accepted"}
+{"time":"2026-08-17T04:53:13.836490163Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.233:35346","http_status":401,"code":"unauthorized","reason":"operator bearer token missing or not accepted"}
+{"time":"2026-08-17T04:53:14.660968924Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"683ff6d98cfa3facb8482b912cfdf3ae","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","expires_at":"2026-08-17T05:03:14.645775398Z"}
+{"time":"2026-08-17T04:53:30.092976351Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.233:38424","http_status":401,"code":"unauthorized","reason":"operator bearer token missing or not accepted"}
+{"time":"2026-08-17T04:53:30.881999385Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"00000000-0000-4000-8000-000000000000","peer_address":"10.55.156.233:38434","http_status":409,"code":"conflict","reason":"attestor: instance not found"}
+{"time":"2026-08-17T04:53:31.609566167Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.233:38436","http_status":401,"code":"unauthorized","reason":"operator bearer token missing or not accepted"}
+{"time":"2026-08-17T04:53:32.39096091Z","level":"WARN","msg":"bootstrap request denied","operation":"mint","outcome":"denied","nonce_id":"","instance_uuid":"","peer_address":"10.55.156.233:57334","http_status":400,"code":"invalid_request","reason":"decode request body: invalid character 'o' in literal null (expecting 'u')"}
+
+--- what the log proves ---
+Every 401 line carries instance_uuid:"" — the request was refused before the body
+was decoded, so the service never learned which instance was being asked for and
+therefore could not have resolved it. The one authenticated request for the same
+nonexistent UUID carries instance_uuid:"00000000-0000-4000-8000-000000000000" and
+reason "attestor: instance not found", which is the read-only credential actually
+reaching the Incus API and coming back empty. Same body, same endpoint, same
+second: the only difference is the token, and the only request that touched Incus
+is the one that presented it.
+
+The 401 for a missing header and the 401 for a wrong token are byte-identical:
+both bodies hash to 3341bff062d83e3afeb943f83bbb079f5b45cc050e796ec282dde50b5906cb31
+("{"error":"unauthorized"}"), both carry WWW-Authenticate: Bearer
+realm="incus-spiffe-broker", and the log distinguishes them by neither: it records
+the peer address and never the presented value. A caller cannot tell "you sent no
+token" from "you sent the wrong one".
+
+--- clear the key the successful mint (683ff6d98cfa3facb8482b912cfdf3ae) wrote ---
+user.spiffe-bootstrap on spike-guest-a: cleared

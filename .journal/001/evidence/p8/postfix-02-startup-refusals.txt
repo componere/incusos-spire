@@ -1,0 +1,33 @@
+=== P8 post-hardening: the broker refuses to start without a usable operator token — 2026-08-17T04:46:11Z ===
+
+The service is stopped for these two attempts, so nothing else holds :8443.
+Both failures happen in run() before any listener is bound and before either
+Incus credential is loaded.
+
+--- (a) no -mint-token-file at all: the complete working configuration MINUS the token ---
+{"time":"2026-08-17T04:46:12.542863535Z","level":"ERROR","msg":"incus-spiffe-broker stopped","reason":"invalid configuration: -mint-token-file is required"}
+exit status: 1
+
+--- (b) a token file that exists but is only 16 characters ---
+{"time":"2026-08-17T04:46:13.312886197Z","level":"ERROR","msg":"incus-spiffe-broker stopped","reason":"operator mint token in /state/auth/short-token is 16 characters; -mint-token-file requires at least 32"}
+exit status: 1
+
+--- (c) same again with the flag form rather than the environment form ---
+{"time":"2026-08-17T04:46:14.089722166Z","level":"ERROR","msg":"incus-spiffe-broker stopped","reason":"operator mint token in /state/auth/short-token is 16 characters; -mint-token-file requires at least 32"}
+exit status: 1
+
+--- (d) a token file that does not exist ---
+exit status: 1
+{"time":"2026-08-17T04:46:14.869736157Z","level":"ERROR","msg":"incus-spiffe-broker stopped","reason":"read operator mint token: open /state/auth/absent: no such file or directory"}
+
+--- port check: nothing was bound by any of the four attempts ---
+0
+0 listeners on 8443
+
+--- do those messages contain any token text? checked in code, inside the container ---
+captured refusal output bytes: 547  (three refusals)
+short token value present in the refusals: NO (0 matches)
+operator token value present in the refusals: NO (0 matches)
+
+positive control — same grep against a file that deliberately holds the short token:
+  control matched: YES (the grep itself works)

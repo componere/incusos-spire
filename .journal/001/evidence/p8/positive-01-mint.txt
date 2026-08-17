@@ -1,0 +1,17 @@
+=== date: 2026-08-17T03:54:09Z
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=72c9cd50d98a862105f5d6e08552916a
+  expires_at=2026-08-17T04:04:09.716208096Z
+  instance_name=spike-guest-a
+  generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=72c9cd50d98a862105f5d6e08552916a expires_at=2026-08-17T04:04:09.716208096Z instance_name=spike-guest-a generation_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+=== exit: 0

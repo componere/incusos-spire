@@ -1,0 +1,117 @@
+=== P8 post-hardening: cleanup and final state — 2026-08-17T05:01:33Z ===
+
+--- user.spiffe-bootstrap on every instance in both projects ---
+  default/spike-broker: unset
+  default/spike-p3-stage: unset
+  default/spike-p8-operator: unset
+  default/spike-probe: unset
+  default/spire-agent: unset
+  default/spire-server: unset
+  spike-spiffe/spike-authz-probe: unset
+  spike-spiffe/spike-guest-a: unset
+  spike-spiffe/spike-guest-b: unset
+
+--- delete the throwaway operator container (it held a copy of the operator Incus client key and the mint token) ---
+  spike-p8-operator: deleted
+
+--- remove the probe's staging directory (it held a copy of the operator mint token) ---
+  /root/p8fix in spike-probe: removed
+
+--- remove the deliberately short throwaway token from the broker ---
+total 22
+drwx------ 2 root root  3 Aug 17 05:01 .
+drwx--x--x 5 root root  6 Aug 17 04:57 ..
+-rw------- 1 root root 64 Aug 17 04:45 mint-token
+
+--- guest staging directories (the harness removed them; verifying) ---
+  /root/p8 in spike-guest-a: removed
+  /root/p8 in spike-guest-b: removed
+
+--- throwaway instances and snapshots ---
+       NAME          STATE   SNAPSHOTS 
+ spike-authz-probe  RUNNING  0         
+ spike-guest-a      RUNNING  0         
+ spike-guest-b      RUNNING  0         
+      NAME        STATE   SNAPSHOTS 
+ spike-broker    RUNNING  0         
+ spike-p3-stage  RUNNING  0         
+ spike-probe     RUNNING  0         
+ spire-agent     RUNNING  0         
+ spire-server    RUNNING  0         
+
+--- broker final configuration (this is what P9 inherits) ---
+systemctl is-active: active
+binary sha256:
+c534af07c95ef333b1a09dabb75367c6f66ab5cc01b1b178dc6f81ee89afa741  /usr/local/bin/incus-spiffe-broker
+
+verbatim /state/broker.env:
+INCUS_SPIFFE_BROKER_LISTEN=:8443
+INCUS_SPIFFE_BROKER_TLS_CERT=/state/tls/broker.crt
+INCUS_SPIFFE_BROKER_TLS_KEY=/state/tls/broker.key
+INCUS_SPIFFE_BROKER_ADVERTISE_URL=https://10.55.156.44:8443
+INCUS_SPIFFE_BROKER_INCUS_URL=https://147.135.105.83:8443
+INCUS_SPIFFE_BROKER_INCUS_SERVER_FINGERPRINT=822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd
+INCUS_SPIFFE_BROKER_ATTESTOR_CERT=/state/incus/attestor.crt
+INCUS_SPIFFE_BROKER_ATTESTOR_KEY=/state/incus/attestor.key
+INCUS_SPIFFE_BROKER_BOOTSTRAP_CERT=/state/incus/bootstrap.crt
+INCUS_SPIFFE_BROKER_BOOTSTRAP_KEY=/state/incus/bootstrap.key
+INCUS_SPIFFE_BROKER_PROJECT=spike-spiffe
+INCUS_SPIFFE_BROKER_MINT_TOKEN_FILE=/state/auth/mint-token
+INCUS_SPIFFE_BROKER_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_MAX_NONCE_TTL=10m
+INCUS_SPIFFE_BROKER_REAP_INTERVAL=1m
+INCUS_SPIFFE_BROKER_REAP_TIMEOUT=30s
+INCUS_SPIFFE_BROKER_REAP_GRACE=2m
+INCUS_SPIFFE_BROKER_REQUEST_TIMEOUT=10s
+
+operator mint token: /state/auth/mint-token, mode 600, 64 characters
+  sha256 (digest only, per Appendix D):
+b611396fe3cdec41a79b1df4a7f48939d7822fc571923251581465beea70a172  -
+
+startup log after the final restart:
+{"time":"2026-08-17T04:57:13.977232554Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+{"time":"2026-08-17T04:57:13.977361454Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=684,fd=3)) 
+
+--- guests A and B persist into P9 ---
+  spike-guest-a: state=RUNNING uuid=a955ca30-a0dc-4087-a369-37d53d389c5a generation=c32efc7b-f3d8-4637-9818-f8906c35543a
+    /dev/incus/sock: present (incus-agent running)
+  spike-guest-b: state=RUNNING uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 generation=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+    /dev/incus/sock: present (incus-agent running)
+
+--- spike-authz-probe untouched ---
+  volatile.uuid            = 6d1c5ee3-5b2f-4ead-8e54-db985302fbdb
+  volatile.uuid.generation = 6d1c5ee3-5b2f-4ead-8e54-db985302fbdb
+
+--- SPIRE: agent still attested, exactly one agent, zero registration entries ---
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 06:00:09 +0000 UTC
+Serial number     : 4906592237331806403932526908809528941
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+Found 0 entries
+
+  spire-agent health, probed from the neighbouring spike-probe:
+    /live -> HTTP 200
+    /ready -> HTTP 200
+Error: Command not found
+
+--- host security state, non-secret fields only ---
+(the response also carries drive_recovery_keys, pool_recovery_keys and
+ config.encryption_recovery_keys; those were never read into this transcript)
+{"secure_boot_enabled":true,"encrypted_volumes":[{"state":"unlocked (TPM)","volume":"root"},{"state":"unlocked (TPM)","volume":"swap"}],"tpm_status":"ok","system_state_status":"system state is fully trusted","system_state_is_trusted":true}
+
+  spire-agent container: it has no shell, so `incus exec ... -- sh` answers
+  "Error: Command not found". That is the image, not a fault, and it is why the
+  agent is probed over HTTP from spike-probe above: /live and /ready both 200,
+  and the server lists the agent as attested with "Can re-attest: true".
+
+No TPM command was run, no reboot, no incus admin os mutation, no change to
+spire-server, spire-agent or their volumes, no code-worktree change, no
+repository gate, no Git command.

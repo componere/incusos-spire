@@ -1,0 +1,6 @@
+date=2026-08-17T03:55:24Z instance=spike-guest-a project=spike-spiffe
+visible user.* keys on the instance:
+user.spiffe-bootstrap: <unset or empty>
+=== guest-side read after redemption
+guest GET /1.0/config/user.spiffe-bootstrap -> HTTP 404
+visible keys: []

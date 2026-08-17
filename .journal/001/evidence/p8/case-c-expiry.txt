@@ -1,0 +1,83 @@
+=== case c — expired nonce rejected
+date=2026-08-17T03:59:19Z
+
+NOTE: the broker's mint request schema is {instance_uuid, project} only — it has no
+ttl_seconds field (cmd/incus-spiffe-broker/service.go mintRequest), and its JSON decoder
+does not reject unknown fields, so the harness's MINT_TTL_SECONDS/SHORT_TTL_SECONDS is
+silently ignored. The TTL is therefore changed where it actually lives: the broker's own
+-nonce-ttl. The service is restarted with INCUS_SPIFFE_BROKER_NONCE_TTL=5s for this case.
+
+--- reconfigure the broker to a 5s nonce TTL
+{"time":"2026-08-17T03:59:20.654340516Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"5s","request_timeout":"10s"}
+
+--- run lifecycle-matrix.sh case c
+
+=== preflight
+remote:            ovh-incusos
+project:           spike-spiffe
+guest A:           spike-guest-a (volatile.uuid=a955ca30-a0dc-4087-a369-37d53d389c5a)
+guest B:           spike-guest-b (volatile.uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338)
+broker:            https://10.55.156.44:8443 (mint /v1alpha1/nonce, redeem /v1alpha1/redeem)
+bootstrap key:     user.spiffe-bootstrap
+guest staging dir: /root/p8
+cases:             c
+strict status:     1
+
+=== case c — expired nonce is rejected (P8 step 4)
+    [mint] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [mint] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [mint] mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+    [mint] mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=5
+    [mint] mint: HTTP 201
+    [mint] assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+    [mint] minted:
+    [mint]   nonce_id=ec5f93034716369e5755ccc6974243e9
+    [mint]   expires_at=2026-08-17T03:59:29.221415042Z
+    [mint]   instance_name=spike-guest-a
+    [mint]   generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506
+    [mint]   instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+    [mint]   project=spike-spiffe
+    [mint]   nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+    [mint] RESULT mint outcome=minted status=201 nonce_id=ec5f93034716369e5755ccc6974243e9 expires_at=2026-08-17T03:59:29.221415042Z instance_name=spike-guest-a generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+    minted nonce_id=ec5f93034716369e5755ccc6974243e9 expires_at=2026-08-17T03:59:29.221415042Z instance_name=spike-guest-a generation_uuid=d79b19ff-549c-4809-be8a-94822a41f506
+--- waiting 12s for the nonce to expire (requested TTL 5s, expires_at=2026-08-17T03:59:29.221415042Z)
+    if the broker ignores ttl_seconds, set EXPIRY_WAIT_SECONDS above its configured TTL
+--- redeem after expiry
+    [spike-guest-a] socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+    [spike-guest-a] payload: nonce_id=ec5f93034716369e5755ccc6974243e9
+    [spike-guest-a] payload: sha256=97c06bc1f4113c6beafdd661c0a2fee44001a58fd068b8fdf83f1094251abef9
+    [spike-guest-a] payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+    [spike-guest-a] payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] payload: nonce=<redacted, present>
+    [spike-guest-a] broker: host=10.55.156.44 port=8443
+    [spike-guest-a] tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+    [spike-guest-a] tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+    [spike-guest-a] redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=ec5f93034716369e5755ccc6974243e9 claimed_instance_uuid=-
+    [spike-guest-a] redeem: chain validation against BROKER_CACERT=/root/p8/broker-ca.pem plus the SPKI pin
+    [spike-guest-a] redeem: HTTP 409
+    [spike-guest-a] verdict: REJECTED 409 conflict — the nonce exists and the secret matched, but the state
+    [spike-guest-a]          forbids redemption: already consumed, expired, bound to another instance, or the
+    [spike-guest-a]          generation moved (a snapshot restore). Single use is enforced server-side by one
+    [spike-guest-a]          compare-and-set; the guest cannot clear the key.
+    [spike-guest-a] RESULT mode=redeem outcome=rejected status=409 nonce_id=ec5f93034716369e5755ccc6974243e9 reason=conflict
+PASS  case c: the expired nonce ec5f93034716369e5755ccc6974243e9 was rejected with HTTP 409
+
+=== summary
+
+verdict: every selected lifecycle case behaved as designed
+
+=== cleanup (runs on abort too: P8 requires config keys cleared either way)
+cleared user.spiffe-bootstrap on spike-guest-a
+cleared user.spiffe-bootstrap on spike-guest-b
+removed /root/p8 in spike-guest-a (it held nonce payloads)
+removed /root/p8 in spike-guest-b (it held nonce payloads)
+=== lifecycle-matrix exit: 0
+=== broker log for case c (expiry) and TTL restore
+date=2026-08-17T03:59:50Z
+{"time":"2026-08-17T03:59:20.654340516Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"5s","request_timeout":"10s"}
+{"time":"2026-08-17T03:59:24.236191993Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"ec5f93034716369e5755ccc6974243e9","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","instance_name":"spike-guest-a","generation":"d79b19ff-549c-4809-be8a-94822a41f506","project":"spike-spiffe","expires_at":"2026-08-17T03:59:29.221415042Z"}
+{"time":"2026-08-17T03:59:36.447866669Z","level":"WARN","msg":"bootstrap request denied","operation":"redeem","outcome":"denied","nonce_id":"ec5f93034716369e5755ccc6974243e9","instance_uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","http_status":409,"code":"conflict","reason":"nonce: consume nonce ec5f93034716369e5755ccc6974243e9: nonce: nonce expired: id ec5f93034716369e5755ccc6974243e9"}
+
+--- restore the production-shaped TTL
+active
+{"time":"2026-08-17T03:59:51.674020391Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","nonce_ttl":"10m0s","request_timeout":"10s"}

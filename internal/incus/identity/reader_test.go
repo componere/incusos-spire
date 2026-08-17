@@ -216,7 +216,7 @@ func TestReadInstanceByUUIDTimeoutIsBackendUnavailable(t *testing.T) {
 	assert.Equal(t, attestor.InstanceRecord{}, got)
 }
 
-func TestReadEndpointIdentityTLSPinFailureIsBackendUnavailable(t *testing.T) {
+func TestReadEndpointIdentityTLSPinFailureIsPermanent(t *testing.T) {
 	t.Parallel()
 
 	handler := func(writer http.ResponseWriter, _ *http.Request) {
@@ -240,7 +240,8 @@ func TestReadEndpointIdentityTLSPinFailureIsBackendUnavailable(t *testing.T) {
 
 	got, err := reader.ReadEndpointIdentity(t.Context())
 	require.Error(t, err)
-	require.ErrorIs(t, err, attestor.ErrBackendUnavailable)
+	require.ErrorIs(t, err, attestor.ErrBackendPermanent)
+	require.NotErrorIs(t, err, attestor.ErrBackendUnavailable)
 	assert.Equal(t, attestor.EndpointIdentity{}, got)
 }
 
@@ -268,18 +269,100 @@ func TestReadEndpointIdentityTransportFailureIsBackendUnavailable(t *testing.T) 
 	assert.Equal(t, attestor.EndpointIdentity{}, got)
 }
 
-func TestReadInstanceByUUIDDoesNotRetryAuthorizationFailure(t *testing.T) {
+func TestReadInstanceByUUIDClassifiesAuthorizationFailure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "client certificate rejected", status: http.StatusUnauthorized},
+		{name: "authorization scriptlet denied the read", status: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var calls atomic.Int32
+			env := newTestEnv(t, func(writer http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				writer.WriteHeader(tt.status)
+			})
+
+			_, err := env.reader.ReadInstanceByUUID(t.Context(), capturedUUID, capturedProject)
+			require.Error(t, err)
+			require.ErrorIs(t, err, attestor.ErrBackendUnauthorized)
+			require.NotErrorIs(t, err, attestor.ErrBackendUnavailable)
+			require.NotErrorIs(t, err, attestor.ErrBackendPermanent)
+			assert.Equal(t, firstCall, calls.Load(), "an authorization denial is attempted exactly once")
+		})
+	}
+}
+
+func TestReadInstanceByUUIDClassifiesPermanentFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{
+			name: "unexpected HTTP status",
+			handler: func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(http.StatusNotImplemented)
+			},
+		},
+		{
+			name: "malformed response body",
+			handler: func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = writer.Write([]byte("{not json"))
+			},
+		},
+		{
+			name: "incus error envelope",
+			handler: func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = writer.Write([]byte(`{"type":"error","error_code":500,"error":"internal"}`))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var calls atomic.Int32
+			env := newTestEnv(t, func(writer http.ResponseWriter, req *http.Request) {
+				calls.Add(1)
+				tt.handler(writer, req)
+			})
+
+			_, err := env.reader.ReadInstanceByUUID(t.Context(), capturedUUID, capturedProject)
+			require.Error(t, err)
+			require.ErrorIs(t, err, attestor.ErrBackendPermanent)
+			require.NotErrorIs(t, err, attestor.ErrBackendUnavailable)
+			require.NotErrorIs(t, err, attestor.ErrBackendUnauthorized)
+			assert.Equal(t, firstCall, calls.Load(), "a permanent failure is attempted exactly once")
+		})
+	}
+}
+
+func TestReadEndpointIdentityEmptyIdentityIsPermanent(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int32
 	env := newTestEnv(t, func(writer http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		writer.WriteHeader(http.StatusForbidden)
+		writeEnvelope(t, writer, map[string]any{"environment": map[string]any{}})
 	})
 
-	_, err := env.reader.ReadInstanceByUUID(t.Context(), capturedUUID, capturedProject)
+	got, err := env.reader.ReadEndpointIdentity(t.Context())
 	require.Error(t, err)
-	require.ErrorIs(t, err, attestor.ErrBackendUnavailable)
+	require.ErrorIs(t, err, attestor.ErrBackendPermanent)
+	require.NotErrorIs(t, err, attestor.ErrBackendUnavailable)
+	assert.Equal(t, attestor.EndpointIdentity{}, got)
 	assert.Equal(t, firstCall, calls.Load())
 }
 
@@ -312,6 +395,82 @@ func TestReadInstanceByUUIDRetriesTransientTransportError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, capturedUUID, got.UUID)
 	assert.GreaterOrEqual(t, calls.Load(), retriedAtLeast)
+}
+
+func TestReadInstanceByUUIDStopsAtTheRetryBound(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	env := newTestEnv(t, func(writer http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+
+		hijacker, ok := writer.(http.Hijacker)
+		assert.True(t, ok)
+		if !ok {
+			return
+		}
+		conn, _, err := hijacker.Hijack()
+		assert.NoError(t, err)
+		if err != nil {
+			return
+		}
+		assert.NoError(t, conn.Close())
+	})
+
+	_, err := env.reader.ReadInstanceByUUID(t.Context(), capturedUUID, capturedProject)
+	require.Error(t, err)
+	require.ErrorIs(t, err, attestor.ErrBackendUnavailable)
+	assert.Equal(t, int32(maxAttempts), calls.Load(), "a transient fault is attempted exactly maxAttempts times")
+}
+
+func TestDeriveKeepsTheAdapterRetryClass(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		wantErr error
+		notErr  error
+	}{
+		{
+			name: "authorization denial stays non-retryable",
+			handler: func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(http.StatusForbidden)
+			},
+			wantErr: attestor.ErrBackendUnauthorized,
+			notErr:  attestor.ErrBackendUnavailable,
+		},
+		{
+			name: "permanent protocol failure stays non-retryable",
+			handler: func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				_, _ = writer.Write([]byte("{not json"))
+			},
+			wantErr: attestor.ErrBackendPermanent,
+			notErr:  attestor.ErrBackendUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var calls atomic.Int32
+			env := newTestEnv(t, func(writer http.ResponseWriter, req *http.Request) {
+				calls.Add(1)
+				tt.handler(writer, req)
+			})
+
+			selectors, err := attestor.NewDeriver(env.reader).Derive(t.Context(), attestor.Reference{
+				InstanceUUID: capturedUUID,
+			})
+			require.Error(t, err)
+			require.ErrorIs(t, err, tt.wantErr)
+			require.NotErrorIs(t, err, tt.notErr)
+			assert.Nil(t, selectors)
+			assert.Equal(t, firstCall, calls.Load(), "the core must not turn one denial into several reads")
+		})
+	}
 }
 
 func TestNewReaderValidatesConfig(t *testing.T) {

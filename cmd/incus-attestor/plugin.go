@@ -250,19 +250,30 @@ func (p *Plugin) Validate(
 
 // attestFailure maps a core failure onto this plugin's gRPC answer:
 //
-//	[attestor.ErrInvalidReference]    InvalidArgument
-//	[attestor.ErrInstanceNotFound]    no selectors and no error
-//	[attestor.ErrAmbiguousReference]  PermissionDenied
-//	[attestor.ErrGenerationMismatch]  PermissionDenied
-//	[attestor.ErrEndpointMismatch]    PermissionDenied
-//	[attestor.ErrUnusableRecord]      PermissionDenied
-//	[attestor.ErrBackendUnavailable]  Unavailable
-//	any other error                   Internal
+//	[attestor.ErrInvalidReference]     InvalidArgument
+//	[attestor.ErrInstanceNotFound]     no selectors and no error
+//	[attestor.ErrAmbiguousReference]   PermissionDenied
+//	[attestor.ErrGenerationMismatch]   PermissionDenied
+//	[attestor.ErrEndpointMismatch]     PermissionDenied
+//	[attestor.ErrUnusableRecord]       PermissionDenied
+//	[attestor.ErrBackendUnauthorized]  FailedPrecondition
+//	[attestor.ErrBackendPermanent]     FailedPrecondition
+//	[attestor.ErrBackendUnavailable]   Unavailable
+//	any other error                    Internal
 //
 // A missing instance is the documented "no selectors, no SVID" outcome rather
 // than an error, because SPIRE mints no SVID for an empty selector set.
 // Rejections carry a fixed message: the underlying text can name live Incus
 // state, so it is logged at debug level and never returned to the caller.
+//
+// Only the transient backend class is Unavailable, because SPIRE preserves a
+// plugin status through the Broker API and a Broker client retries Unavailable.
+// An Incus credential refusal or a configuration fault would then be attempted
+// once per Broker retry without any chance of a different answer, so both take
+// FailedPrecondition: non-retryable, and distinct from the PermissionDenied
+// this plugin already uses for an attestation denial. Reusing PermissionDenied
+// would make a broken deployment indistinguishable from a workload that is not
+// attestable.
 func (p *Plugin) attestFailure(err error) (*workloadattestorv1.AttestReferenceResponse, error) {
 	p.logDebug("incus attestation failed", "error", err.Error())
 
@@ -276,6 +287,10 @@ func (p *Plugin) attestFailure(err error) (*workloadattestorv1.AttestReferenceRe
 		errors.Is(err, attestor.ErrEndpointMismatch),
 		errors.Is(err, attestor.ErrUnusableRecord):
 		return nil, status.Error(codes.PermissionDenied, "incus instance reference is not attestable")
+	case errors.Is(err, attestor.ErrBackendUnauthorized):
+		return nil, status.Error(codes.FailedPrecondition, "incus backend authorization failed")
+	case errors.Is(err, attestor.ErrBackendPermanent):
+		return nil, status.Error(codes.FailedPrecondition, "incus backend misconfigured")
 	case errors.Is(err, attestor.ErrBackendUnavailable):
 		return nil, status.Error(codes.Unavailable, "incus backend unavailable")
 	default:

@@ -236,10 +236,26 @@ func selector(key, value string) Selector {
 	return Selector(selectorType + ":" + key + ":" + value)
 }
 
-// wrapBackend marks a reader transport failure as [ErrBackendUnavailable]
-// while preserving the original error for [errors.Is].
+// wrapBackend adds the failing operation to a reader failure without losing its
+// retry class. A reader that already classified the failure keeps that class,
+// so an authorization or configuration fault is never laundered into
+// [ErrBackendUnavailable] and retried by an outer caller. An unclassified
+// reader error is treated as transient backend unavailability, the historical
+// behavior of this port.
 func wrapBackend(op string, err error) error {
+	if isClassifiedBackendFailure(err) {
+		return fmt.Errorf("attestor: %s failed: %w", op, err)
+	}
+
 	return fmt.Errorf("attestor: %s failed: %w: %w", op, ErrBackendUnavailable, err)
+}
+
+// isClassifiedBackendFailure reports whether the adapter already stated the
+// retry class of err.
+func isClassifiedBackendFailure(err error) bool {
+	return errors.Is(err, ErrBackendUnavailable) ||
+		errors.Is(err, ErrBackendUnauthorized) ||
+		errors.Is(err, ErrBackendPermanent)
 }
 
 // isCanonicalUUID reports whether value is a lowercase RFC 4122 textual UUID.

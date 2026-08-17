@@ -135,6 +135,12 @@ func (s Selector) TypeAndValue() (string, string) {
 // [ErrAmbiguousReference] and no record. Zero matches is [ErrInstanceNotFound],
 // distinct from a transport error, so the plugin can answer "no selectors"
 // instead of "backend broken".
+//
+// A backend failure carries its retryability with it: [ErrBackendUnavailable]
+// for a transient transport fault, [ErrBackendUnauthorized] for a credential
+// refusal, and [ErrBackendPermanent] for a protocol or configuration fault.
+// The adapter classifies once, and every layer above reads the classification
+// instead of guessing from a status code.
 type InstanceReader interface {
 	// ReadInstanceByUUID returns the unique instance whose volatile.uuid matches
 	// uuid. An empty project means the adapter's configured project. The adapter
@@ -178,7 +184,28 @@ const (
 	// neither [EndpointIdentity.ServerName] nor
 	// [EndpointIdentity.CertificateFingerprint].
 	ErrEndpointMismatch sentinelError = "attestor: endpoint mismatch"
-	// ErrBackendUnavailable is returned when the reader fails for a transport,
-	// TLS, or other backend reason distinct from not-found and ambiguous.
+	// ErrBackendUnavailable is returned when the Incus API could not be reached
+	// for a genuinely transient reason: a refused or reset connection, a
+	// black-holed endpoint, or the bounded request timeout expiring.
+	//
+	// Retry semantics: RETRYABLE. The adapter retries it within its own bounded
+	// budget, and an outer caller may retry it again. It is the only backend
+	// sentinel the plugin reports as gRPC Unavailable.
 	ErrBackendUnavailable sentinelError = "attestor: backend unavailable"
+	// ErrBackendUnauthorized is returned when the Incus API refused the
+	// attestor's credential, that is HTTP 401 or 403.
+	//
+	// Retry semantics: NEVER RETRY. The denial is a property of the deployed
+	// client certificate and of the server-side authorization policy, so every
+	// repeat of the same read earns the same denial.
+	ErrBackendUnauthorized sentinelError = "attestor: backend authorization failed"
+	// ErrBackendPermanent is returned when the Incus API was reached but the
+	// exchange cannot succeed without an operator change: a malformed or
+	// oversized body, an Incus error envelope, an unexpected HTTP status, an
+	// empty endpoint identity, or a TLS or configuration rejection such as a
+	// server certificate that fails the configured pin.
+	//
+	// Retry semantics: NEVER RETRY. Retrying a configuration or protocol fault
+	// only multiplies the failure.
+	ErrBackendPermanent sentinelError = "attestor: backend permanent failure"
 )

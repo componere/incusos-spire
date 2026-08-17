@@ -33,6 +33,18 @@ const (
 	shortTimeout = 50 * time.Millisecond
 	// waitTimeout bounds how long a test waits for a server-side observation.
 	waitTimeout = 2 * time.Second
+	// allowlistDenialMessage is the PermissionDenied message SPIRE 1.15.2
+	// returned live when the broker's SPIFFE ID was not allowed to use the
+	// submitted reference type.
+	allowlistDenialMessage = `broker "spiffe://spike.incus.internal/incus-broker" is not allowed ` +
+		`to use reference type "type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference"`
+	// pluginDenialMessage is the PermissionDenied message the Incus workload
+	// attestor returns after it has attested the reference and its own policy
+	// rejected the instance. Same status code, entirely different cause.
+	pluginDenialMessage = "incus instance reference is not attestable"
+	// backendAuthFailureMessage is the FailedPrecondition message the Incus
+	// workload attestor returns when Incus refused its credential.
+	backendAuthFailureMessage = "incus backend authorization failed"
 )
 
 // respondFunc produces the outcome of one SubscribeToX509SVID call. attempt is
@@ -132,9 +144,15 @@ func TestFetchX509SVIDSendsTheMandatorySecurityHeader(t *testing.T) {
 
 func TestFetchX509SVIDMapsStatusCodesToSentinels(t *testing.T) {
 	tests := []struct {
-		name    string
+		name string
+		// respond scripts the stub's answer.
 		respond respondFunc
-		want    error
+		// want is the sentinel the error must match, or nil when no sentinel
+		// may match.
+		want error
+		// notWant is a sentinel the error must not match, so an over-claiming
+		// classification is caught.
+		notWant error
 		code    codes.Code
 	}{
 		{
@@ -145,9 +163,22 @@ func TestFetchX509SVIDMapsStatusCodesToSentinels(t *testing.T) {
 		},
 		{
 			name:    "reference type outside the broker allowlist",
-			respond: failWith(codes.PermissionDenied, "is not allowed to use reference type"),
+			respond: failWith(codes.PermissionDenied, allowlistDenialMessage),
 			want:    ErrReferenceTypeDenied,
 			code:    codes.PermissionDenied,
+		},
+		{
+			name:    "attestor denied the reference after attesting it",
+			respond: failWith(codes.PermissionDenied, pluginDenialMessage),
+			want:    ErrPermissionDenied,
+			notWant: ErrReferenceTypeDenied,
+			code:    codes.PermissionDenied,
+		},
+		{
+			name:    "plugin reported a backend authorization failure",
+			respond: failWith(codes.FailedPrecondition, backendAuthFailureMessage),
+			want:    nil,
+			code:    codes.FailedPrecondition,
 		},
 		{
 			name:    "broker socket not accepting connections",
@@ -199,6 +230,9 @@ func TestFetchX509SVIDMapsStatusCodesToSentinels(t *testing.T) {
 			} else {
 				require.ErrorIs(t, err, test.want)
 			}
+			if test.notWant != nil {
+				require.NotErrorIs(t, err, test.notWant)
+			}
 
 			assert.Equal(t, test.code, status.Code(err), "the gRPC status must stay in the chain")
 		})
@@ -207,9 +241,14 @@ func TestFetchX509SVIDMapsStatusCodesToSentinels(t *testing.T) {
 
 func TestFetchX509SVIDRetriesOnlyTransientTransportFailures(t *testing.T) {
 	tests := []struct {
-		name         string
-		respond      respondFunc
-		wantErr      error
+		name    string
+		respond respondFunc
+		// wantErr is the sentinel the failure must match. Nil with an empty
+		// wantErrText means the call must succeed.
+		wantErr error
+		// wantErrText is asserted for a failure this package deliberately
+		// leaves unmapped, which must still not be retried.
+		wantErrText  string
 		wantAttempts int
 	}{
 		{
@@ -234,9 +273,22 @@ func TestFetchX509SVIDRetriesOnlyTransientTransportFailures(t *testing.T) {
 			wantAttempts: maxAttempts,
 		},
 		{
-			name:         "permission denied is never retried",
-			respond:      failWith(codes.PermissionDenied, "is not allowed to use reference type"),
+			name:         "allowlist denial is never retried",
+			respond:      failWith(codes.PermissionDenied, allowlistDenialMessage),
 			wantErr:      ErrReferenceTypeDenied,
+			wantAttempts: 1,
+		},
+		{
+			name:         "post-attestation denial is never retried",
+			respond:      failWith(codes.PermissionDenied, pluginDenialMessage),
+			wantErr:      ErrPermissionDenied,
+			wantAttempts: 1,
+		},
+		{
+			name:         "plugin backend authorization failure is never retried",
+			respond:      failWith(codes.FailedPrecondition, backendAuthFailureMessage),
+			wantErr:      nil,
+			wantErrText:  backendAuthFailureMessage,
 			wantAttempts: 1,
 		},
 		{
@@ -253,10 +305,15 @@ func TestFetchX509SVIDRetriesOnlyTransientTransportFailures(t *testing.T) {
 			client := newTestClient(t, testTimeout, stub)
 
 			_, err := client.FetchX509SVID(context.Background(), incusReference(t))
-			if test.wantErr == nil {
-				require.NoError(t, err)
-			} else {
+			switch {
+			case test.wantErr != nil:
 				require.ErrorIs(t, err, test.wantErr)
+			case test.wantErrText != "":
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.wantErrText)
+				assertNoSentinel(t, err)
+			default:
+				require.NoError(t, err)
 			}
 
 			requests, _ := stub.recorded()
@@ -509,6 +566,7 @@ func assertNoSentinel(t *testing.T, err error) {
 
 	for _, sentinel := range []error{
 		ErrInvalidRequest,
+		ErrPermissionDenied,
 		ErrReferenceTypeDenied,
 		ErrTransport,
 		ErrTimeout,

@@ -33,6 +33,18 @@ const (
 	unixScheme = "unix://"
 	// maxAttempts bounds the retry budget for transient transport failures (E3).
 	maxAttempts = 3
+	// allowlistDenialMarker is the fragment SPIRE 1.15.2 puts in its own
+	// PermissionDenied message when a broker's SPIFFE ID may not use a
+	// reference type, observed live as:
+	//
+	//	broker "spiffe://spike.incus.internal/incus-broker" is not allowed to
+	//	use reference type "type.googleapis.com/..."
+	//
+	// It is the single version-pinned string in this package. If a later SPIRE
+	// release rewords the denial, only this constant changes, and until it does
+	// an unrecognized denial degrades to the honest [ErrPermissionDenied]
+	// rather than to a false claim about the allowlist.
+	allowlistDenialMarker = "is not allowed to use reference type"
 )
 
 var (
@@ -42,11 +54,25 @@ var (
 	// request") and a request whose workload reference is absent or empty.
 	ErrInvalidRequest = errors.New("broker rejected the request arguments")
 
-	// ErrReferenceTypeDenied reports gRPC PermissionDenied: the reference
-	// type_url is outside the allowed_reference_types configured for this
-	// broker's SPIFFE ID. Authorization happens before attestation, so no
-	// workload attestor ran.
-	ErrReferenceTypeDenied = errors.New("broker denied the workload reference type")
+	// ErrPermissionDenied reports gRPC PermissionDenied from the Broker
+	// endpoint. The code alone does not say who denied the call: SPIRE returns
+	// it when the reference type_url is outside allowed_reference_types, and a
+	// workload attestor plugin returns it when its own policy rejects a
+	// reference that it did attest. Match this sentinel whenever "the broker
+	// refused to issue an SVID for this reference" is the answer you need.
+	ErrPermissionDenied = errors.New("broker denied the workload reference")
+
+	// ErrReferenceTypeDenied reports the one PermissionDenied this package can
+	// attribute: the reference type_url is outside the allowed_reference_types
+	// configured for this broker's SPIFFE ID, so authorization failed before
+	// attestation and no workload attestor ran. Attribution comes from the
+	// SPIRE message shape, see [allowlistDenialMarker]; an unattributable
+	// denial stays [ErrPermissionDenied]. It wraps [ErrPermissionDenied], so
+	// matching either sentinel works and only this one claims the cause.
+	ErrReferenceTypeDenied = fmt.Errorf(
+		"%w: the reference type is outside the broker allowlist",
+		ErrPermissionDenied,
+	)
 
 	// ErrTransport reports a transport or TLS failure. An unauthorized broker
 	// SPIFFE ID is rejected during the TLS handshake, so it surfaces here rather
@@ -184,8 +210,10 @@ func newClient(api brokerv1.APIClient, timeout time.Duration) *Client {
 // the Broker API requires: the Any goes inside a WorkloadReference, which goes
 // inside SubscribeToX509SVIDRequest. The mandatory "broker.spiffe.io: true"
 // header is attached by the connection's interceptors; omitting it makes SPIRE
-// answer InvalidArgument, reported here as [ErrInvalidRequest]. A type_url
-// outside the broker's allowlist yields [ErrReferenceTypeDenied].
+// answer InvalidArgument, reported here as [ErrInvalidRequest]. Any refusal to
+// issue an SVID for the reference yields [ErrPermissionDenied], and the subset
+// SPIRE attributes to the broker's allowed_reference_types additionally yields
+// [ErrReferenceTypeDenied].
 //
 // The whole operation is bounded by Config.RequestTimeout. Only an Unavailable
 // transport failure is retried, at most [maxAttempts] times (E3); every other
@@ -340,11 +368,12 @@ func classify(err error) error {
 		return fmt.Errorf("%w: %w", ErrTimeout, err)
 	}
 
-	if _, ok := status.FromError(err); !ok {
+	st, ok := status.FromError(err)
+	if !ok {
 		return fmt.Errorf("subscribe to X509-SVID: %w", err)
 	}
 
-	sentinel := sentinelForCode(status.Code(err))
+	sentinel := sentinelForStatus(st)
 	if sentinel == nil {
 		return fmt.Errorf("subscribe to X509-SVID: %w", err)
 	}
@@ -352,14 +381,15 @@ func classify(err error) error {
 	return fmt.Errorf("%w: %w", sentinel, err)
 }
 
-// sentinelForCode returns the sentinel documented for code, or nil when SPIRE
+// sentinelForStatus returns the sentinel documented for st, or nil when SPIRE
 // 1.15.2 gives the code no Broker-specific meaning.
-func sentinelForCode(code codes.Code) error {
+func sentinelForStatus(st *status.Status) error {
+	code := st.Code()
 	if code == codes.InvalidArgument {
 		return ErrInvalidRequest
 	}
 	if code == codes.PermissionDenied {
-		return ErrReferenceTypeDenied
+		return permissionDeniedSentinel(st.Message())
 	}
 	if code == codes.DeadlineExceeded {
 		return ErrTimeout
@@ -369,6 +399,23 @@ func sentinelForCode(code codes.Code) error {
 	}
 
 	return nil
+}
+
+// permissionDeniedSentinel attributes a PermissionDenied denial. SPIRE itself
+// denies a reference type with a message of the shape
+//
+//	broker "spiffe://<domain>/<path>" is not allowed to use reference type "<type_url>"
+//
+// while a workload attestor plugin denies its own reference with whatever
+// message that plugin chose, after it ran. Only the first shape justifies
+// [ErrReferenceTypeDenied]; anything else stays [ErrPermissionDenied] rather
+// than claiming a cause this package cannot observe.
+func permissionDeniedSentinel(message string) error {
+	if strings.Contains(message, allowlistDenialMarker) {
+		return ErrReferenceTypeDenied
+	}
+
+	return ErrPermissionDenied
 }
 
 // isTransient reports the only retryable Broker failure: an Unavailable

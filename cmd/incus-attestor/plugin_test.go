@@ -59,6 +59,13 @@ const (
 	// unreachableServerURL refuses connections immediately, so a served plugin
 	// reaches the reader and reports backend unavailability without a live host.
 	unreachableServerURL = "https://127.0.0.1:1"
+	// leakyEndpoint is an internal Incus origin that a raw transport error would
+	// name. It must never reach a caller through a gRPC status message.
+	leakyEndpoint = "https://incus-internal.attestor.invalid:8443"
+	// leakyPeerAddress is the private address a dial failure would name.
+	leakyPeerAddress = "10.99.0.7:8443"
+	// leakyCause is the Incus-side sentence a raw error would carry.
+	leakyCause = "remote error: tls: bad certificate"
 )
 
 // liveRecord returns the instance record captured from the live Incus host.
@@ -111,6 +118,25 @@ func attest(
 		t.Context(),
 		&workloadattestorv1.AttestReferenceRequest{Reference: reference},
 	)
+}
+
+// leakyBackendError wraps sentinel in the kind of raw text a real Incus failure
+// carries: an internal endpoint, a private peer address, the instance UUID
+// under attestation, and the server's own error sentence.
+func leakyBackendError(sentinel error) error {
+	return fmt.Errorf(
+		"incus: Get %q: dial tcp %s: %s: %w",
+		leakyEndpoint+"/1.0/instances?recursion=1&filter=config.volatile.uuid+eq+"+liveUUID,
+		leakyPeerAddress,
+		leakyCause,
+		sentinel,
+	)
+}
+
+// leakedBackendText returns every fragment of [leakyBackendError] that a caller
+// must never see.
+func leakedBackendText() []string {
+	return []string{leakyEndpoint, leakyPeerAddress, leakyCause, liveUUID}
 }
 
 func TestPackedReferenceUsesFrozenTypeURL(t *testing.T) {
@@ -341,22 +367,110 @@ func TestAttestReferenceMapsCoreSentinels(t *testing.T) {
 	}
 }
 
-func TestAttestFailureHidesBackendDetailAndMapsUnknownError(t *testing.T) {
+// TestAttestReferenceHidesBackendDetailBehindFixedMessage drives a real backend
+// failure through the whole plugin path and proves the gRPC answer carries the
+// fixed message for its class and none of the live Incus text that caused it.
+func TestAttestReferenceHidesBackendDetailBehindFixedMessage(t *testing.T) {
 	t.Parallel()
 
-	plugin := new(Plugin)
+	serverClaim := liveClaim()
+	serverClaim.Server = liveServerName
 
-	_, err := plugin.attestFailure(fmt.Errorf(
+	tests := map[string]struct {
+		claim       *incusv1alpha1.IncusInstanceReference
+		backend     error
+		wantCode    codes.Code
+		wantMessage string
+	}{
+		"instance lookup is unavailable": {
+			claim:       liveClaim(),
+			backend:     leakyBackendError(attestor.ErrBackendUnavailable),
+			wantCode:    codes.Unavailable,
+			wantMessage: "incus backend unavailable",
+		},
+		"instance lookup is unauthorized": {
+			claim:       liveClaim(),
+			backend:     leakyBackendError(attestor.ErrBackendUnauthorized),
+			wantCode:    codes.FailedPrecondition,
+			wantMessage: "incus backend authorization failed",
+		},
+		"instance lookup fails permanently": {
+			claim:       liveClaim(),
+			backend:     leakyBackendError(attestor.ErrBackendPermanent),
+			wantCode:    codes.FailedPrecondition,
+			wantMessage: "incus backend misconfigured",
+		},
+		"endpoint identity read is unavailable": {
+			claim:       serverClaim,
+			backend:     leakyBackendError(attestor.ErrBackendUnavailable),
+			wantCode:    codes.Unavailable,
+			wantMessage: "incus backend unavailable",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			reader := mocks.NewMockInstanceReader(t)
+			if test.claim.GetServer() == "" {
+				reader.EXPECT().
+					ReadInstanceByUUID(mock.Anything, mock.Anything, mock.Anything).
+					Return(attestor.InstanceRecord{}, test.backend).
+					Once()
+			} else {
+				reader.EXPECT().
+					ReadInstanceByUUID(mock.Anything, mock.Anything, mock.Anything).
+					Return(liveRecord(), nil).
+					Once()
+				reader.EXPECT().
+					ReadEndpointIdentity(mock.Anything).
+					Return(attestor.EndpointIdentity{}, test.backend).
+					Once()
+			}
+
+			_, err := attest(t, reader, packReference(t, test.claim))
+			require.Equal(t, test.wantCode, status.Code(err))
+
+			message := status.Convert(err).Message()
+			for _, secret := range leakedBackendText() {
+				require.NotContains(
+					t,
+					message,
+					secret,
+					"raw incus backend text reached the caller through gRPC",
+				)
+			}
+
+			require.Equal(t, test.wantMessage, message)
+		})
+	}
+}
+
+// TestAttestFailureHidesPolicyDetail proves a policy rejection answers with the
+// fixed denial message and never names the live state that triggered it.
+func TestAttestFailureHidesPolicyDetail(t *testing.T) {
+	t.Parallel()
+
+	_, err := new(Plugin).attestFailure(fmt.Errorf(
 		"attestor: expected generation %q does not match live generation %q: %w",
 		otherGeneration,
 		liveGeneration,
 		attestor.ErrGenerationMismatch,
 	))
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, "incus instance reference is not attestable", status.Convert(err).Message())
 	require.NotContains(t, status.Convert(err).Message(), liveGeneration)
+}
 
-	_, err = plugin.attestFailure(errors.New("boom"))
+// TestAttestFailureMapsUnknownErrorToInternal proves an unclassified failure
+// becomes Internal without echoing its text.
+func TestAttestFailureMapsUnknownErrorToInternal(t *testing.T) {
+	t.Parallel()
+
+	_, err := new(Plugin).attestFailure(errors.New("boom"))
 	require.Equal(t, codes.Internal, status.Code(err))
+	require.NotContains(t, status.Convert(err).Message(), "boom")
 }
 
 func TestReaderConfigRejectsIncompleteConfig(t *testing.T) {

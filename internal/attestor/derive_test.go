@@ -403,8 +403,18 @@ func TestDeriveAllowsConfiguredStatuses(t *testing.T) {
 	require.Equal(t, expectedSelectors(stopped), got)
 }
 
+// TestPackageImportsStayPure fails when a non-test file in internal/attestor
+// imports anything outside the exact production set this deliberately tiny pure
+// core needs. An allowlist is used rather than a denylist because the point of
+// A1 is that infrastructure is reached only through the InstanceReader port:
+// os, io, net, database/sql, a gRPC package, or an Incus client are all equally
+// disqualifying, and a denylist can only name the ones already thought of.
 func TestPackageImportsStayPure(t *testing.T) {
 	t.Parallel()
+
+	// allowed is the complete set of imports permitted in production files here.
+	// Adding to it is an architectural decision, not a mechanical fix.
+	allowed := []string{"context", "errors", "fmt", "strings"}
 
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
@@ -421,10 +431,18 @@ func TestPackageImportsStayPure(t *testing.T) {
 
 		for _, spec := range file.Imports {
 			importPath := strings.Trim(spec.Path.Value, `"`)
-			require.NotEqual(t, "net/http", importPath, path)
-			require.NotEqual(t, "time", importPath, path)
-			require.NotContains(t, importPath, "github.com/lxc", path)
-			require.NotContains(t, importPath, "incus", path)
+			require.Contains(
+				t,
+				allowed,
+				importPath,
+				"%s imports %q, which is not in the pure-core allowlist %v; "+
+					"internal/attestor is the A1 pure core and must reach every "+
+					"side effect through the InstanceReader port instead of "+
+					"importing I/O, a clock, a transport, or an Incus client",
+				path,
+				importPath,
+				allowed,
+			)
 		}
 	}
 }

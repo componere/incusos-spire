@@ -144,22 +144,32 @@
 // that cannot obtain one refuses to start rather than accepting redemptions it
 // could only answer with a 503.
 //
-// # A Broker failure after consumption burns the nonce
+// # A failure after consumption burns the nonce, and says so distinctly
 //
-// The nonce is consumed before the exchange SVID is requested, and that ordering
-// has a cost this package states rather than hides: if the Broker API then fails,
-// the guest has spent its one-time credential and received nothing. It must
-// obtain a fresh nonce from an operator. No retry of the burned one can succeed,
-// and none should: the alternative is issuing before committing single use, which
-// would mean a nonce that can mint two identities under a crash or a race.
+// The nonce is consumed before the selectors are derived and before the exchange
+// SVID is requested, and that ordering has a cost this package states rather than
+// hides: if anything after the consume fails, the guest has spent its one-time
+// credential and received nothing. It must obtain a fresh nonce from an operator.
+// No retry of the burned one can succeed, and none should: the alternative is
+// issuing before committing single use, which would mean a nonce that can mint two
+// identities under a crash or a race.
 //
-// Such a failure is never reported as a rejected nonce. It answers 500 or 503
-// with the uniform body, never 401 or 409, and it is logged at error level as
-// "nonce consumed but no exchange SVID was issued" with outcome=burned, the nonce
-// ID, the instance UUID, and a failure_class. An operator reading the log can
-// therefore tell a burned nonce apart from a refused presentation, which is the
-// difference between "fix the host-side registration" and "this guest presented
-// something invalid":
+// Such a failure is never reported as a rejected nonce, and it does not answer with
+// a status-class code either. It answers
+//
+//	{"error":"nonce_consumed_without_svid"}
+//
+// with a 500 or a 503 on the exchange path, or with whatever status the P8 mapping
+// fixes for a post-consume derivation fault — never a 401 and never a 409. That
+// code is the entire contract for a guest, and it is exact: the nonce is gone,
+// presenting the same nonce_id again answers 409 conflict and always will, and the
+// only recovery is a fresh mint by an operator. A status alone could not say that.
+// A 503 from a burned nonce and a 503 from a broken nonce store are the same three
+// digits, and one of them is worth retrying while the other never is. The body
+// carries nothing beyond the code; which failure it was is in the log.
+//
+// The status still says who has to act, and the failure class in the log says what
+// to fix:
 //
 //	failure_class                 status  meaning
 //	broker_reference_type_denied     500  reference type outside the agent's broker allowlist
@@ -170,13 +180,54 @@
 //	broker_no_svid                   503  subscription accepted, stream ended empty
 //	exchange_material_invalid        500  delivered SVID could not be converted to usable PEM
 //	broker_unknown                   500  Broker failure with no documented sentinel
+//	selector_derivation           4xx/5xx  derivation failed after the consume; status per the P8 mapping
 //
-// The split is between what an operator must fix and what may pass on its own. A
-// denial means the host-side configuration is wrong — no registration entry keyed
-// on incus:uuid:<uuid> for the exchange SPIFFE ID, or a type URL outside the
-// allowlist — and no guest retry changes that, so it is a 500. A transport
-// failure, a timeout, and an empty stream are conditions that clear, so they are
-// 503.
+// The split among the broker classes is between what an operator must fix and what
+// may clear on its own. A denial means the host-side configuration is wrong — no
+// registration entry keyed on incus:uuid:<uuid> for the exchange SPIFFE ID, or a
+// type URL outside the allowlist — and no guest retry changes that, so it is a 500.
+// A transport failure, a timeout, and an empty stream are conditions that clear, so
+// they are 503, and the operator mints again once the socket is back. A
+// selector_derivation burn keeps the status the P8 mapping gives its underlying
+// fault, so an instance that stopped between the consume and the derivation still
+// answers 409; only the code says the nonce went with it.
+//
+// Every one of those cases logs at ERROR with the fixed message "nonce consumed but
+// no exchange SVID was issued", plus outcome=burned, the nonce ID, the instance
+// UUID, the project, the peer address, the failure class, the status, and
+// code=nonce_consumed_without_svid. That message is the operator's alert surface:
+// it is stable, it means exactly one thing, and it is how a burned nonce is told
+// apart from a refused presentation, which is the difference between "fix the
+// host-side registration" and "this guest presented something invalid".
+//
+// # Burning nonces is a denial of service the spike does not close
+//
+// The consequence of that ordering, stated plainly: anyone who can induce a Broker
+// failure can burn nonces. Holding the host agent's Broker socket down, keeping the
+// agent unavailable, or removing the exchange registration entry makes every
+// redemption attempt spend a nonce and return nothing, and the guest cannot help
+// itself — the distinct code correctly tells it to stop retrying, which is honest
+// and is still a stalled bootstrap.
+//
+// Two things bound it. Burning requires a valid nonce secret, so an attacker either
+// has to break the Broker path while a legitimate guest redeems, or already hold a
+// stolen nonce (finding SEC-009). And the mint endpoint is authenticated: an
+// attacker cannot mint replacements, so burning cannot manufacture credentials or
+// bootstrap attempts, it can only consume ones an operator provisioned. The cost is
+// therefore availability of provisioning, not identity.
+//
+// A production design should add what this spike deliberately does not. The
+// structural fix is to issue the exchange SVID before committing single use —
+// reserve the nonce, obtain the SVID, commit the consume only once the material is
+// in hand — and the tradeoff is exact: committing first leaves a burn window, where
+// a failure costs the credential; issuing first leaves a replay window, where a
+// crash or a race between the issue and the commit can hand exchange material to
+// two callers presenting the same nonce, and two callers can then attest as the
+// same node. A burn costs an operator a re-mint; a replay costs the uniqueness the
+// nonce exists to provide. The spike takes the burn, states it, and keeps the
+// atomic consume. Neither reversing the order nor idempotent re-delivery — which
+// would mean this service storing or re-fetching a private key it currently forgets
+// immediately — is implemented here.
 //
 // # Authentication, and why only one endpoint has it
 //
@@ -223,9 +274,11 @@
 //
 // Every failure answers with one uniform body, {"error":"<code>"}, whose code
 // names the status class and never names the cause. Detail goes to the log, not
-// to the caller.
+// to the caller. The one code that is not a status class is
+// nonce_consumed_without_svid, which names a state of the nonce: it is the answer
+// to every failure that happens after the consume commits, whatever the status.
 //
-//	sentinel                            status  code
+//	sentinel                            status  code (before the consume commits)
 //	nonce.ErrNonceNotFound                 401  unauthorized
 //	nonce.ErrSecretMismatch                401  unauthorized
 //	nonce.ErrNonceExpired                  409  conflict
@@ -242,13 +295,13 @@
 //	attestor.ErrBackendUnavailable         503  unavailable
 //	nonce.ErrStoreUnavailable              503  unavailable
 //	nonce.ErrWriterUnavailable             503  unavailable
-//	broker.ErrPermissionDenied             500  internal
-//	broker.ErrReferenceTypeDenied          500  internal
-//	broker.ErrInvalidRequest               500  internal
-//	broker.ErrTransport                    503  unavailable
-//	broker.ErrTimeout                      503  unavailable
-//	broker.ErrNoSVID                       503  unavailable
-//	unusable exchange SVID material        500  internal
+//	broker.ErrPermissionDenied             500  nonce_consumed_without_svid
+//	broker.ErrReferenceTypeDenied          500  nonce_consumed_without_svid
+//	broker.ErrInvalidRequest               500  nonce_consumed_without_svid
+//	broker.ErrTransport                    503  nonce_consumed_without_svid
+//	broker.ErrTimeout                      503  nonce_consumed_without_svid
+//	broker.ErrNoSVID                       503  nonce_consumed_without_svid
+//	unusable exchange SVID material        500  nonce_consumed_without_svid
 //	missing or wrong operator token        401  unauthorized
 //	malformed or oversized request body    400  invalid_request
 //	unknown field in a request body        400  invalid_request
@@ -257,12 +310,22 @@
 //	anything else                          500  internal
 //
 // The Broker rows and the last six rows are this service's own additions; the
-// rest is the mapping P8 fixed. attestor.ErrGenerationMismatch,
-// attestor.ErrUnusableRecord, and attestor.ErrInvalidReference are reachable only
-// through selector derivation after a successful redemption, and they join the
-// class they belong to. The Broker rows are reachable only after the nonce has
-// been consumed, which is why none of them can be a 401 or a 409: see "A Broker
-// failure after consumption burns the nonce".
+// rest is the mapping P8 fixed, and every status in it is unchanged.
+//
+// The code column is what the caller sees before the consume commits. After it
+// commits, every failure answers nonce_consumed_without_svid at the same status
+// the sentinel maps to, so the status column is the whole table and the code
+// column has exactly two readings. The Broker rows are reachable only after the
+// consume, which is why their code is fixed and why none of them can be a 401 or
+// a 409. attestor.ErrGenerationMismatch, attestor.ErrUnusableRecord, and
+// attestor.ErrInvalidReference are likewise reachable only through selector
+// derivation after a successful redemption, so in practice they too answer
+// nonce_consumed_without_svid — at 409, 409, and 400 respectively.
+// attestor.ErrInstanceNotFound, attestor.ErrAmbiguousReference, and the backend
+// classes are reachable from both sides: as a mint or pre-consume read they carry
+// the code shown above, and as a post-consume derivation fault they carry the burn
+// code at the same status. See "A failure after consumption burns the nonce, and
+// says so distinctly".
 //
 // Three rules constrain the table. The 401 bodies for an unknown nonce and for a
 // wrong secret are byte-identical, so a caller cannot use the broker to
@@ -295,6 +358,25 @@
 // itself the same way, because slog resolves a LogValuer only at the top of an
 // attribute and would otherwise marshal the whole struct. Neither the key nor its
 // length is ever recorded: a length is a fact about a specific private key.
+//
+// That redaction has one deliberate hole, and it is worth stating as a limitation
+// rather than leaving as an implementation detail: MarshalJSON reveals. The guard
+// covers formatting and slog, which are the paths that exist today; it does not
+// and cannot cover marshalling, because marshalling is how the guest is answered.
+// A JSON-marshalling logger, an audit sink built with encoding/json, a middleware
+// that echoes response bodies, or an error type that marshals its cause would all
+// receive the key in the clear, with no other change to this package. slog is safe
+// only because LogValue resolves before a handler can marshal; remove that method
+// and a JSON handler leaks the key.
+//
+// The rule that follows is absolute for this package: redeemResponse and
+// exchangeKeyPEM must never be handed to a sink that marshals, and any new sink —
+// a different slog handler, a request logger, a tracing exporter, an error wrapper
+// — has to be checked against that rule before it is wired in. The only marshaller
+// in the process is the response encoder that answers the guest that just proved
+// possession of the nonce. TestRedeemResponseRedactionCannotRegress fails if the
+// String or LogValue guard is removed, so the check cannot quietly lapse, but no
+// test can catch a new marshalling sink: that one is a review obligation.
 //
 // Logs carry nonce IDs, instance UUIDs, generations, project and instance names,
 // exchange SPIFFE IDs and expiries, status codes, failure classes, and outcomes.

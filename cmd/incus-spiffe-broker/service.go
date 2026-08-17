@@ -62,6 +62,19 @@ const (
 	codeInternal = "internal"
 	// codeUnavailable names a transient fault a caller may retry.
 	codeUnavailable = "unavailable"
+	// codeNonceConsumedWithoutSVID names the one outcome that is neither a
+	// refused presentation nor a condition worth retrying: the nonce was
+	// accepted, atomically consumed, and then no exchange SVID reached the
+	// guest. Every failure after [nonce.Minter.Redeem] commits answers with it,
+	// whatever the status class, because the status alone cannot carry that
+	// distinction: a 503 from a burned nonce and a 503 from a broken store look
+	// identical to a guest, and only one of them is worth retrying.
+	//
+	// The contract it states is exact. The nonce is gone. Presenting it again
+	// answers 409 with [codeConflict] and always will, so a guest that sees this
+	// code must stop retrying and obtain a fresh nonce from an operator. Nothing
+	// beyond the code is in the body; the failure class is in the log.
+	codeNonceConsumedWithoutSVID = "nonce_consumed_without_svid"
 )
 
 const (
@@ -131,10 +144,12 @@ const (
 	redactedExchangeKey = "exchange-key(redacted)"
 )
 
-// The failure classes of the exchange-SVID fetch. They exist so an operator
+// The failure classes of a burned redemption: every way a nonce can be spent
+// without its guest receiving an exchange SVID. They exist so an operator
 // reading the log can tell a burned nonce apart from a rejected one, and can
-// tell which side of the Broker API failed: an allowlist or registration fault
-// they must fix, or a transport fault the guest may retry after a fresh mint.
+// tell which side failed: an allowlist or registration fault they must fix, a
+// transport fault the guest may retry after a fresh mint, or an instance that
+// changed underneath the redemption.
 const (
 	// classReferenceTypeDenied names a reference type outside the host agent's
 	// broker allowlist. Attestation never ran.
@@ -157,6 +172,11 @@ const (
 	classMaterialInvalid = "exchange_material_invalid"
 	// classUnknown names a Broker failure with no documented sentinel.
 	classUnknown = "broker_unknown"
+	// classSelectorDerivation names a selector derivation that failed after the
+	// consume committed: the instance changed under the redemption, or the read
+	// path behind the deriver refused. The Broker API was never reached, so no
+	// exchange credential exists for this nonce anywhere.
+	classSelectorDerivation = "selector_derivation"
 )
 
 // errExchangeMaterial reports an SVID the Broker API delivered that this service
@@ -356,6 +376,19 @@ func (r redeemRequest) LogValue() slog.Value {
 // caller is the encoder that writes the redemption answer to the guest that just
 // proved it owns this identity.
 //
+// The limitation of that guard is exact and must not be forgotten: JSON
+// marshalling is not redaction, it is the reveal. Every other rendering path is
+// safe by construction, but any sink that marshals instead of formatting —
+// a JSON-marshalling logger, an audit writer, a metrics label built with
+// [encoding/json], an error type that marshals its cause — receives the key
+// itself. The rule that follows: this type, and any struct containing it, must
+// never be handed to a sink that marshals. Today the only marshaller in the
+// process is the encoder in [Service.writeJSON] answering the guest, and the
+// [log/slog] path is safe because [redeemResponse.LogValue] resolves before any
+// handler can marshal. Every new sink has to be checked against that rule; a
+// [log/slog.Handler] swapped for one that marshals attribute values would leak
+// the key with no other change to this package.
+//
 // Neither the material nor its length is ever reported. A length is a fact about
 // a private key, and a log line that carries one for a specific nonce ID has
 // described that key.
@@ -444,6 +477,15 @@ type exchangeMaterial struct {
 // rather than claiming to have closed it: the guest is given the key, so the
 // guest's own storage decision is load-bearing and unenforceable from here.
 //
+// This type must never be handed to a sink that marshals it. Its
+// [redeemResponse.String] and [redeemResponse.LogValue] are the whole reason a
+// careless log line does not leak the key, and they only cover formatting and
+// [log/slog]: marshalling this struct is exactly what answering the guest does,
+// so [encoding/json] on it produces the key in the clear by design. Both methods
+// are load-bearing security controls rather than conveniences, and
+// TestRedeemResponseRedactionCannotRegress exists so removing either one fails
+// the build's tests instead of silently opening that path.
+//
 // The P8 fields are kept. The selector list is what the live run reads to
 // confirm which identity was proved, and it is secret-free.
 type redeemResponse struct {
@@ -479,6 +521,9 @@ type redeemResponse struct {
 // composed answer cannot print the key it carries. [exchangeKeyPEM] already
 // refuses every verb on its own; this refuses the enclosing document too, because
 // a struct is only ever one careless %+v away from its fields.
+//
+// It is a required control, not a nicety. See the type documentation: nothing
+// here defends against a sink that marshals.
 func (r redeemResponse) String() string {
 	return "redeemResponse(nonce_id=" + string(r.NonceID) +
 		", exchange_spiffe_id=" + string(r.ExchangeSPIFFEID) +
@@ -488,7 +533,9 @@ func (r redeemResponse) String() string {
 // LogValue redacts the answer for [log/slog]. It is the guard that matters most:
 // [log/slog] resolves a [log/slog.LogValuer] only at the top of an attribute, so
 // a handler handed this whole struct would otherwise fall back to marshalling it,
-// and marshalling is the one path that deliberately reveals the key.
+// and marshalling is the one path that deliberately reveals the key. Removing this
+// method would therefore turn any JSON handler into a key leak, which is why
+// TestRedeemResponseRedactionCannotRegress asserts it exists.
 func (r redeemResponse) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.String(fieldNonceID, string(r.NonceID)),
@@ -498,9 +545,13 @@ func (r redeemResponse) LogValue() slog.Value {
 	)
 }
 
-// errorResponse is the uniform failure body. It names the status class and
-// never the cause, so no answer distinguishes an unknown nonce from a wrong
-// secret.
+// errorResponse is the uniform failure body. It names the status class and never
+// the cause, so no answer distinguishes an unknown nonce from a wrong secret.
+//
+// [codeNonceConsumedWithoutSVID] is the one code that is not a status class, and
+// it is not a cause either: it names a state of the nonce, which the guest cannot
+// otherwise learn and must act on. It appears only after a consume committed, so
+// it reveals nothing to a caller that did not already spend a valid nonce.
 type errorResponse struct {
 	// Error is one of the code constants of this package.
 	Error string `json:"error"`
@@ -797,8 +848,9 @@ func (s *Service) requestedTTL(request mintRequest) (time.Duration, error) {
 //
 // A successful consume is the point of no return. The clear, the selector
 // derivation, and the exchange-SVID fetch all run against a nonce that is already
-// spent, so a Broker failure among them is reported as this service's fault and
-// never as a refused presentation. See [Service.grantExchange].
+// spent, so a failure among them is reported as this service's fault, never as a
+// refused presentation, and always with [codeNonceConsumedWithoutSVID]. See
+// [Service.grantExchange].
 func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if !s.requirePost(w, r, operationRedeem) {
@@ -861,12 +913,14 @@ func (s *Service) handleRedeem(w http.ResponseWriter, r *http.Request) {
 // grantExchange completes a committed redemption: it derives the selector set,
 // obtains the exchange SVID for the bound instance, and answers the guest.
 //
-// The nonce is already spent when this runs, which changes what a Broker failure
-// means. It is not "your nonce was rejected", it is "your nonce is gone and you
-// got nothing for it", so it is answered as a 500 or a 503 and never as a 401 or a
-// 409, and it is logged with a failure class an operator can act on. See
-// [Service.burn]. A derivation failure keeps the mapping P8 fixed for it, which is
-// the mapping the live run already reads.
+// The nonce is already spent when this runs, which changes what every failure in
+// here means. It is not "your nonce was rejected", it is "your nonce is gone and
+// you got nothing for it", so both failures answer with
+// [codeNonceConsumedWithoutSVID] rather than the code their status class would
+// otherwise carry, and both are logged with a failure class an operator can act
+// on. See [Service.burn]. The statuses are unchanged: the exchange fetch keeps
+// the 500/503 split of [exchangeFailure] and a derivation failure keeps the
+// status the mapping P8 fixed for it, which is the status the live run reads.
 //
 // The selectors are derived before the SVID is requested. A derivation failure
 // then costs nothing beyond the nonce, whereas the reverse order would leave a
@@ -886,14 +940,21 @@ func (s *Service) grantExchange(
 		Server:       "",
 	})
 	if err != nil {
-		s.deny(r, w, operationRedeem, consumed.ID, consumed.Instance, err)
+		// A derivation failure after the consume is a burned nonce too, not a
+		// refused presentation: routing it through deny would answer 409 with
+		// the same body a replayed nonce gets, and a guest cannot act on the
+		// difference between "already used" and "used just now, by you, for
+		// nothing".
+		status, _ := failureStatus(err)
+		s.burn(r, w, consumed, status, classSelectorDerivation, err)
 
 		return
 	}
 
 	exchange, err := s.fetchExchange(ctx, consumed)
 	if err != nil {
-		s.burn(r, w, consumed, err)
+		status, class := exchangeFailure(err)
+		s.burn(r, w, consumed, status, class, err)
 
 		return
 	}
@@ -961,17 +1022,34 @@ func (s *Service) fetchExchange(ctx context.Context, consumed nonce.Record) (exc
 	return exchangePEM(svid)
 }
 
-// burn answers a redemption whose nonce was consumed and whose exchange SVID
-// never arrived.
+// burn answers a redemption whose nonce was consumed and whose guest received no
+// exchange SVID. status is the class the underlying fault maps to and class is
+// the [classReferenceTypeDenied] family value that names it in the log.
 //
 // It exists because [Service.deny] would tell the wrong story. A denial means the
 // presentation was refused and the nonce is still whatever it was; this means the
 // presentation was accepted, the nonce is spent, and the failure is on this side.
-// The record therefore carries outcome=burned and a failure class, and the answer
-// is a 5xx: the guest must obtain a fresh nonce from an operator, and no retry of
-// this one can ever succeed.
-func (s *Service) burn(r *http.Request, w http.ResponseWriter, consumed nonce.Record, err error) {
-	status, code, class := exchangeFailure(err)
+// So the answer carries [codeNonceConsumedWithoutSVID] instead of the code its
+// status would otherwise get, and the record carries outcome=burned and a failure
+// class. The guest must obtain a fresh nonce from an operator; no retry of this
+// one can ever succeed, and the distinct code is what tells it so, because a 500
+// or a 503 alone is indistinguishable from a fault worth waiting out.
+//
+// The log record is the operator's alert surface, and its message is fixed for
+// that reason: "nonce consumed but no exchange SVID was issued" states the whole
+// event, and the nonce ID, the instance UUID, and the failure class say which
+// nonce, which guest, and what to fix. The reason is the wrapped error text,
+// which carries no material: the presented secret is a [nonce.Secret] and the
+// exchange key never leaves [exchangeKeyPEM], and both redact themselves through
+// every formatting path.
+func (s *Service) burn(
+	r *http.Request,
+	w http.ResponseWriter,
+	consumed nonce.Record,
+	status int,
+	class string,
+	err error,
+) {
 	ctx := r.Context()
 
 	s.logger.ErrorContext(ctx, "nonce consumed but no exchange SVID was issued",
@@ -983,11 +1061,11 @@ func (s *Service) burn(r *http.Request, w http.ResponseWriter, consumed nonce.Re
 		fieldFailureClass, class,
 		fieldPeerAddress, r.RemoteAddr,
 		fieldHTTPStatus, status,
-		fieldCode, code,
+		fieldCode, codeNonceConsumedWithoutSVID,
 		fieldReason, err.Error(),
 	)
 
-	_ = s.writeJSON(ctx, w, status, errorResponse{Error: code})
+	_ = s.writeJSON(ctx, w, status, errorResponse{Error: codeNonceConsumedWithoutSVID})
 }
 
 // clearBootstrap empties the bootstrap key after a redemption has committed.
@@ -1212,46 +1290,48 @@ func failureStatus(err error) (int, string) {
 	}
 }
 
-// exchangeFailure maps a Broker API failure onto its status, its uniform body
-// code, and its log failure class. Every outcome is a 5xx, because by the time
-// this mapping is consulted the guest has done everything right and the nonce is
-// gone.
+// exchangeFailure maps a Broker API failure onto its status and its log failure
+// class. Every outcome is a 5xx, because by the time this mapping is consulted
+// the guest has done everything right and the nonce is gone.
 //
-// The split is between what an operator must fix and what a caller may retry.
-// A denial means the host-side configuration is wrong — the reference type is
-// outside the agent's broker allowlist, or no registration entry matches
-// incus:uuid:<uuid> for the exchange SPIFFE ID — and no amount of retrying by a
-// guest will change that, so it answers 500. A transport failure, a timeout, and
-// an empty stream are conditions that pass, so they answer 503 and invite the
-// operator to mint again once the broker socket is back.
+// It returns no body code, because there is only one: every failure here answers
+// [codeNonceConsumedWithoutSVID]. The status still carries the split between what
+// an operator must fix and what may clear on its own. A denial means the host-side
+// configuration is wrong — the reference type is outside the agent's broker
+// allowlist, or no registration entry matches incus:uuid:<uuid> for the exchange
+// SPIFFE ID — and no amount of retrying by a guest will change that, so it answers
+// 500. A transport failure, a timeout, and an empty stream are conditions that
+// pass, so they answer 503 and invite the operator to mint again once the broker
+// socket is back. Neither invites a retry of the burned nonce: the code forbids
+// that, whatever the status.
 //
 // [broker.ErrReferenceTypeDenied] is matched before [broker.ErrPermissionDenied]
 // because it wraps it, and it is the one denial the adapter can attribute.
-func exchangeFailure(err error) (int, string, string) {
+func exchangeFailure(err error) (int, string) {
 	switch {
 	case errors.Is(err, broker.ErrReferenceTypeDenied):
-		return http.StatusInternalServerError, codeInternal, classReferenceTypeDenied
+		return http.StatusInternalServerError, classReferenceTypeDenied
 
 	case errors.Is(err, broker.ErrPermissionDenied):
-		return http.StatusInternalServerError, codeInternal, classPermissionDenied
+		return http.StatusInternalServerError, classPermissionDenied
 
 	case errors.Is(err, broker.ErrInvalidRequest):
-		return http.StatusInternalServerError, codeInternal, classInvalidRequest
+		return http.StatusInternalServerError, classInvalidRequest
 
 	case errors.Is(err, broker.ErrTimeout):
-		return http.StatusServiceUnavailable, codeUnavailable, classTimeout
+		return http.StatusServiceUnavailable, classTimeout
 
 	case errors.Is(err, broker.ErrTransport):
-		return http.StatusServiceUnavailable, codeUnavailable, classTransport
+		return http.StatusServiceUnavailable, classTransport
 
 	case errors.Is(err, broker.ErrNoSVID):
-		return http.StatusServiceUnavailable, codeUnavailable, classNoSVID
+		return http.StatusServiceUnavailable, classNoSVID
 
 	case errors.Is(err, errExchangeMaterial):
-		return http.StatusInternalServerError, codeInternal, classMaterialInvalid
+		return http.StatusInternalServerError, classMaterialInvalid
 
 	default:
-		return http.StatusInternalServerError, codeInternal, classUnknown
+		return http.StatusInternalServerError, classUnknown
 	}
 }
 

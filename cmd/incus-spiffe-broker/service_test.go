@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -688,40 +689,42 @@ func parseCertificatePEM(t *testing.T, encoded string) []*x509.Certificate {
 }
 
 func TestRedeemBurnsTheNonceWhenTheExchangeFetchFails(t *testing.T) {
+	// Every case answers the same body code, because a guest can act on exactly
+	// one fact: the nonce is gone. The status still separates what an operator
+	// must fix from what may clear on its own, and the log carries the class.
 	tests := map[string]struct {
 		failure    error
 		wantStatus int
-		wantCode   string
 		wantClass  string
 	}{
 		"reference type outside the broker allowlist": {
 			failure:    broker.ErrReferenceTypeDenied,
 			wantStatus: http.StatusInternalServerError,
-			wantCode:   codeInternal,
 			wantClass:  classReferenceTypeDenied,
 		},
 		"no registration entry matches the selector": {
 			failure:    broker.ErrPermissionDenied,
 			wantStatus: http.StatusInternalServerError,
-			wantCode:   codeInternal,
 			wantClass:  classPermissionDenied,
+		},
+		"the broker endpoint rejected the request": {
+			failure:    broker.ErrInvalidRequest,
+			wantStatus: http.StatusInternalServerError,
+			wantClass:  classInvalidRequest,
 		},
 		"broker socket unreachable": {
 			failure:    broker.ErrTransport,
 			wantStatus: http.StatusServiceUnavailable,
-			wantCode:   codeUnavailable,
 			wantClass:  classTransport,
 		},
 		"broker call timed out": {
 			failure:    broker.ErrTimeout,
 			wantStatus: http.StatusServiceUnavailable,
-			wantCode:   codeUnavailable,
 			wantClass:  classTimeout,
 		},
 		"stream ended without an SVID": {
 			failure:    broker.ErrNoSVID,
 			wantStatus: http.StatusServiceUnavailable,
-			wantCode:   codeUnavailable,
 			wantClass:  classNoSVID,
 		},
 	}
@@ -742,15 +745,19 @@ func TestRedeemBurnsTheNonceWhenTheExchangeFetchFails(t *testing.T) {
 
 			// A Broker failure is this service's fault, never a refused
 			// presentation: the guest presented a valid nonce and is owed an
-			// answer that says so.
+			// answer that says so. The status class is preserved; the code is the
+			// one that tells the guest the nonce is gone.
 			require.Equal(t, test.wantStatus, response.Code, response.Body.String())
-			require.JSONEq(t, `{"error":"`+test.wantCode+`"}`, response.Body.String())
+			require.JSONEq(t, `{"error":"`+codeNonceConsumedWithoutSVID+`"}`, response.Body.String())
+			require.NotContains(t, response.Body.String(), codeInternal)
+			require.NotContains(t, response.Body.String(), codeUnavailable)
 
 			logs := fixture.logs.String()
 			require.Contains(t, logs, "nonce consumed but no exchange SVID was issued")
 			require.Contains(t, logs, fieldFailureClass+"="+test.wantClass)
 			require.Contains(t, logs, fieldNonceID+"="+string(id))
 			require.Contains(t, logs, fieldInstanceUUID+"="+string(guestUUID))
+			require.Contains(t, logs, fieldCode+"="+codeNonceConsumedWithoutSVID)
 			require.Contains(t, logs, fieldOutcome+"=burned")
 			require.NotContains(t, logs, fieldOutcome+"=denied")
 			require.NotContains(t, logs, "bootstrap request denied")
@@ -786,8 +793,169 @@ func TestRedeemBurnsTheNonceWhenTheDeliveredMaterialIsUnusable(t *testing.T) {
 
 	response := fixture.post(t, redeemPath, redeemBody(id, secret))
 	require.Equal(t, http.StatusInternalServerError, response.Code, response.Body.String())
-	require.JSONEq(t, `{"error":"`+codeInternal+`"}`, response.Body.String())
+	require.JSONEq(t, `{"error":"`+codeNonceConsumedWithoutSVID+`"}`, response.Body.String())
 	require.Contains(t, fixture.logs.String(), fieldFailureClass+"="+classMaterialInvalid)
+}
+
+func TestRedeemBurnsTheNonceWhenTheDerivationFailsAfterTheConsume(t *testing.T) {
+	const seededID nonce.NonceID = "9c0d1e2f3a4b5c6d"
+
+	fixture := newFixture(t, memory.New())
+	seed(t, fixture.store, boundRecord(seededID, time.Now().Add(time.Minute), false))
+
+	stopped := liveRecord()
+	stopped.Status = attestor.InstanceStatusStopped
+
+	// The redemption reads a running instance and commits; the derivation then
+	// reads it again and finds it stopped, which is a fault the P8 mapping calls a
+	// 409. The nonce is spent by then, so the status stays 409 and the code says
+	// the guest got nothing for it.
+	fixture.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, guestProject).
+		Return(liveRecord(), nil).Once()
+	fixture.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, guestProject).
+		Return(stopped, nil).Once()
+	fixture.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+
+	response := fixture.post(t, redeemPath, redeemBody(seededID, knownSecret))
+	require.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+	require.JSONEq(t, `{"error":"`+codeNonceConsumedWithoutSVID+`"}`, response.Body.String())
+
+	logs := fixture.logs.String()
+	require.Contains(t, logs, "nonce consumed but no exchange SVID was issued")
+	require.Contains(t, logs, fieldFailureClass+"="+classSelectorDerivation)
+	require.Contains(t, logs, fieldOutcome+"=burned")
+	require.NotContains(t, logs, fieldOutcome+"=denied",
+		"a derivation failure after the consume is a burn, not a refusal")
+	require.Empty(t, fixture.exchange.references,
+		"a derivation failure costs the nonce and nothing else: no credential was issued")
+}
+
+func TestBurnedNonceIsNeverConflatedWithARefusedPresentation(t *testing.T) {
+	const (
+		unknownID  nonce.NonceID = "a0b1c2d3e4f5a6b7"
+		expiredID  nonce.NonceID = "b1c2d3e4f5a6b7c8"
+		consumedID nonce.NonceID = "c2d3e4f5a6b7c8d9"
+		derivedID  nonce.NonceID = "d3e4f5a6b7c8d9e0"
+	)
+
+	// The two shapes a guest is entitled to keep reading: a refused presentation
+	// says nothing about why, and a spent nonce says exactly that it is spent.
+	const (
+		refusedUnauthorized = `{"error":"` + codeUnauthorized + `"}`
+		refusedConflict     = `{"error":"` + codeConflict + `"}`
+		burned              = `{"error":"` + codeNonceConsumedWithoutSVID + `"}`
+	)
+
+	unknown := newFixture(t, memory.New())
+	unknownAnswer := unknown.post(t, redeemPath, redeemBody(unknownID, knownSecret))
+
+	expired := newFixture(t, memory.New())
+	seed(t, expired.store, boundRecord(expiredID, time.Now().Add(-time.Minute), false))
+	expired.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, guestProject).
+		Return(liveRecord(), nil).Once()
+
+	expiredAnswer := expired.post(t, redeemPath, redeemBody(expiredID, knownSecret))
+
+	replayed := newFixture(t, memory.New())
+	seed(t, replayed.store, boundRecord(consumedID, time.Now().Add(time.Minute), true))
+	replayed.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, guestProject).
+		Return(liveRecord(), nil).Once()
+
+	replayedAnswer := replayed.post(t, redeemPath, redeemBody(consumedID, knownSecret))
+
+	// A burn whose status is a 5xx, and a burn whose status is the very 409 a
+	// replay answers with. The second is the case that would be indistinguishable
+	// without the distinct code.
+	transport := newFixture(t, memory.New())
+	transport.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, mock.Anything).
+		Return(liveRecord(), nil)
+	transportID, transportSecret := transport.mint(t)
+	transport.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+	transport.exchange.err = broker.ErrNoSVID
+
+	transportAnswer := transport.post(t, redeemPath, redeemBody(transportID, transportSecret))
+
+	stopped := liveRecord()
+	stopped.Status = attestor.InstanceStatusStopped
+
+	derived := newFixture(t, memory.New())
+	seed(t, derived.store, boundRecord(derivedID, time.Now().Add(time.Minute), false))
+	derived.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, guestProject).
+		Return(liveRecord(), nil).Once()
+	derived.reader.EXPECT().ReadInstanceByUUID(mock.Anything, guestUUID, guestProject).
+		Return(stopped, nil).Once()
+	derived.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+
+	derivedAnswer := derived.post(t, redeemPath, redeemBody(derivedID, knownSecret))
+
+	// The pre-consumption bodies are unchanged, byte for byte. A guest, and the
+	// live-run harness, may keep depending on them.
+	require.Equal(t, http.StatusUnauthorized, unknownAnswer.Code, unknownAnswer.Body.String())
+	require.JSONEq(t, refusedUnauthorized, unknownAnswer.Body.String())
+	require.Equal(t, http.StatusConflict, expiredAnswer.Code, expiredAnswer.Body.String())
+	require.JSONEq(t, refusedConflict, expiredAnswer.Body.String())
+	require.Equal(t, http.StatusConflict, replayedAnswer.Code, replayedAnswer.Body.String())
+	require.JSONEq(t, refusedConflict, replayedAnswer.Body.String())
+
+	// No refusal ever carries the burn code: "your nonce was rejected" and "your
+	// nonce was accepted and spent for nothing" are different facts.
+	for _, refusal := range []*httptest.ResponseRecorder{unknownAnswer, expiredAnswer, replayedAnswer} {
+		require.NotContains(t, refusal.Body.String(), codeNonceConsumedWithoutSVID)
+	}
+
+	require.Equal(t, http.StatusServiceUnavailable, transportAnswer.Code, transportAnswer.Body.String())
+	require.JSONEq(t, burned, transportAnswer.Body.String())
+	require.Equal(t, http.StatusConflict, derivedAnswer.Code, derivedAnswer.Body.String())
+	require.JSONEq(t, burned, derivedAnswer.Body.String())
+
+	// Same status, different body: the status class is preserved and the guest can
+	// still tell a replay from a burn.
+	require.Equal(t, replayedAnswer.Code, derivedAnswer.Code)
+	require.NotEqual(t, replayedAnswer.Body.Bytes(), derivedAnswer.Body.Bytes(),
+		"a 409 refusal and a 409 burn must not be the same answer: one may be retried never, the other never at all")
+}
+
+func TestBurnIsLoggedWithTheNonceAndFailureClassAndNoKeyMaterial(t *testing.T) {
+	fixture := newFixture(t, memory.New())
+	fixture.reader.EXPECT().
+		ReadInstanceByUUID(mock.Anything, guestUUID, mock.Anything).
+		Return(liveRecord(), nil)
+
+	id, secret := fixture.mint(t)
+	fixture.writer.EXPECT().ClearBootstrap(mock.Anything, guestProject, guestName).Return(nil).Once()
+
+	// The Broker delivers a real private key and an unparseable chain, so the burn
+	// happens with key material in hand. That is the only burn that can leak one,
+	// which makes it the burn worth asserting on.
+	keyDER, err := x509.MarshalPKCS8PrivateKey(fixture.signer)
+	require.NoError(t, err)
+
+	fixture.exchange.svid.KeyDER = keyDER
+	fixture.exchange.svid.ChainDER = []byte("not a certificate")
+
+	response := fixture.post(t, redeemPath, redeemBody(id, secret))
+	require.Equal(t, http.StatusInternalServerError, response.Code, response.Body.String())
+	require.JSONEq(t, `{"error":"`+codeNonceConsumedWithoutSVID+`"}`, response.Body.String())
+
+	logs := fixture.logs.String()
+
+	// The fixed message is the operator's alert surface, and the record has to say
+	// which nonce, which guest, and what failed.
+	require.Contains(t, logs, "nonce consumed but no exchange SVID was issued")
+	require.Contains(t, logs, "level=ERROR")
+	require.Contains(t, logs, fieldNonceID+"="+string(id))
+	require.Contains(t, logs, fieldInstanceUUID+"="+string(guestUUID))
+	require.Contains(t, logs, fieldFailureClass+"="+classMaterialInvalid)
+	require.Contains(t, logs, fieldOutcome+"=burned")
+	require.Contains(t, logs, fieldCode+"="+codeNonceConsumedWithoutSVID)
+
+	// Appendix D: neither secret may appear, in any encoding the record could have
+	// used. The base64 prefix catches a raw DER dump and a PEM block alike.
+	require.NotContains(t, logs, secret)
+	require.NotContains(t, logs, "PRIVATE KEY")
+	require.NotContains(t, logs, base64.StdEncoding.EncodeToString(keyDER)[:32])
+	require.NotContains(t, logs, redactedExchangeKey,
+		"a burn record has no key field at all, redacted or otherwise")
 }
 
 func TestExchangeKeyPEMNeverPrints(t *testing.T) {
@@ -830,6 +998,70 @@ func TestExchangeKeyPEMNeverPrints(t *testing.T) {
 	encoded, err := json.Marshal(key)
 	require.NoError(t, err)
 	require.JSONEq(t, strconv.Quote(material), string(encoded))
+}
+
+func TestRedeemResponseRedactionCannotRegress(t *testing.T) {
+	const material = "-----BEGIN PRIVATE KEY-----\nZmFrZSBleGNoYW5nZSBrZXk=\n-----END PRIVATE KEY-----\n"
+
+	answer := redeemResponse{
+		NonceID:              "0123456789abcdef",
+		InstanceUUID:         guestUUID,
+		InstanceName:         guestName,
+		Generation:           guestGeneration,
+		Project:              guestProject,
+		Selectors:            []attestor.Selector{"incus:uuid:" + attestor.Selector(guestUUID)},
+		ExchangeSPIFFEID:     exchangeSPIFFEID,
+		ExchangeCertChainPEM: "-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----\n",
+		ExchangeKeyPEM:       newExchangeKeyPEM([]byte(material)),
+		ExchangeBundlePEM:    "-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----\n",
+		ExchangeExpiresAt:    time.Now().Add(exchangeLifetime),
+	}
+
+	// These two methods are security controls, not conveniences. MarshalJSON on
+	// this type deliberately reveals the key, so a sink that marshals instead of
+	// formatting gets the key itself: losing either guard opens that path with no
+	// other change to the package. This assertion is what makes that removal
+	// noisy.
+	require.Implements(t, (*slog.LogValuer)(nil), answer,
+		"redeemResponse must keep LogValue: slog resolves it before a handler can marshal the struct")
+	require.Implements(t, (*fmt.Stringer)(nil), answer,
+		"redeemResponse must keep String: a %v or %+v on the composed answer would otherwise widen to its fields")
+
+	// The JSON handler is the concrete leak: without LogValue it marshals the
+	// attribute, and marshalling is the deliberate reveal.
+	var jsonLogged bytes.Buffer
+
+	slog.New(slog.NewJSONHandler(&jsonLogged, nil)).
+		InfoContext(t.Context(), "answered", "response", answer)
+
+	// The text handler is what this service actually installs, and it formats.
+	var textLogged bytes.Buffer
+
+	slog.New(slog.NewTextHandler(&textLogged, nil)).
+		InfoContext(t.Context(), "answered", "response", answer)
+
+	for _, rendered := range []string{
+		jsonLogged.String(),
+		textLogged.String(),
+		fmt.Sprint(answer),
+		fmt.Sprintf("%v", answer),
+		fmt.Sprintf("%+v", answer),
+		fmt.Sprintf("%#v", answer),
+		fmt.Errorf("redemption answer: %v", answer).Error(),
+	} {
+		require.NotContains(t, rendered, material)
+		require.NotContains(t, rendered, "PRIVATE KEY")
+		require.Contains(t, rendered, redactedExchangeKey)
+	}
+
+	// The guest still receives usable material: the guard must not have been
+	// implemented by breaking the one path that is supposed to reveal.
+	encoded, err := json.Marshal(answer)
+	require.NoError(t, err)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &body))
+	require.Equal(t, material, body["exchange_key_pem"])
 }
 
 func TestRedeemClearsTheBootstrapKeyOnceBeforeTheExchangeFetch(t *testing.T) {
@@ -1153,8 +1385,12 @@ func TestFailureStatusMapping(t *testing.T) {
 
 				return http.MethodPost, redeemPath, redeemBody(seededID, knownSecret)
 			},
+			// The status is the one the P8 mapping fixes for a stopped instance.
+			// The code is not: this failure landed after the consume committed, so
+			// the body says the nonce was spent for nothing. See
+			// TestRedeemBurnsTheNonceWhenTheDerivationFailsAfterTheConsume.
 			wantStatus: http.StatusConflict,
-			wantCode:   codeConflict,
+			wantCode:   codeNonceConsumedWithoutSVID,
 		},
 		{
 			name:  "redeem with a malformed body",

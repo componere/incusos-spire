@@ -26,12 +26,22 @@
 #   HEALTH_BIND_PORT      health listener port
 #
 # The two exchange paths point into a tmpfs that guest-agent-bootstrap.sh mounts
-# itself and then SHREDS AND UNMOUNTS once attestation succeeds. That is
-# deliberate: SPIKE_PLAN.md P9 step 2 records exchange-key handling as a
-# known-unsolved design point (risk R7), and the spike's stance is memory-only,
-# single-use, short-lived rather than a claim that the problem is solved. The
-# consequence is visible right here: after a successful bootstrap this
-# configuration names two files that no longer exist.
+# itself. What happens to them after the first attestation is EXCHANGE_RETENTION:
+#
+#   shred (default)  the files are overwritten and the tmpfs is unmounted the
+#                    moment attestation succeeds. On tmpfs that is an overwrite
+#                    plus an unlink, NOT cryptographic erasure, and tmpfs pages
+#                    can be swapped — the verified claim is only that the files
+#                    and the mount are gone. The consequence is visible right
+#                    here: after a successful bootstrap this configuration names
+#                    two files that no longer exist, so the agent cannot
+#                    re-attest and a restart needs a fresh nonce.
+#   keep             the files stay for the agent's lifetime so x509pop can
+#                    reload them and re-attest, at the cost of a live private key
+#                    in guest memory for that whole time.
+#
+# SPIKE_PLAN.md P9 step 2 records exchange-key handling as a known-unsolved design
+# point (risk R7); the default is the spike's stance, not a solution.
 
 agent {
     trust_domain = "@@TRUST_DOMAIN@@"
@@ -54,14 +64,23 @@ agent {
 
     # The standard local Workload API. This socket is the whole point of the
     # phase: an in-guest app must obtain its SVID from an ordinary Workload API,
-    # with no spike-specific client.
+    # with no spike-specific client — and an app is NOT root.
+    #
+    # SPIRE 1.15.2 serves this socket mode 0777, so reachability is decided by the
+    # directories above it. guest-agent-bootstrap.sh creates every component of
+    # this path mode 0755 rather than inheriting its own umask 077, and
+    # guest-workload-check.sh proves an unprivileged user can fetch through it.
+    # That is not an authorization decision: SPIRE authorizes a workload by
+    # attesting it against a registration entry's unix selectors, never by file
+    # mode. Point this at a path whose parents an ordinary user can traverse.
     socket_path = "@@SOCKET_PATH@@"
 
     log_level = "@@LOG_LEVEL@@"
 }
 
 plugins {
-    # The exchange credential, used exactly once.
+    # The exchange credential. Used once by default, or reloaded on every
+    # re-attestation when the harness ran with EXCHANGE_RETENTION=keep.
     #
     # The server runs x509pop with mode = "spiffe" and the documented v1.15.2
     # defaults svid_prefix = "/spire-exchange" and
@@ -87,31 +106,41 @@ plugins {
 
     # KeyManager: this holds the agent's OWN node-SVID private key, not the
     # exchange key. The choice is the P9 step-4 re-attestation story, defined
-    # here rather than discovered later:
+    # here rather than discovered later. The fact both options sit against: the
+    # SPIRE 1.15.2 server returns CanReattest: true for x509pop, so a node
+    # attested this way is ALLOWED to re-attest, and every attestation re-reads
+    # certificate_path and private_key_path above.
     #
     #   memory (spike default)
     #     Nothing lands on the guest disk. An agent restart or a guest reboot
-    #     loses the node key, so the agent MUST re-attest — and it cannot, because
-    #     the exchange credential was shredded after its single use. The intended
-    #     recovery is therefore explicit: the operator mints a FRESH nonce and
-    #     re-runs guest-agent-bootstrap.sh, one bootstrap per boot. That is a
-    #     deliberate fail-closed property: a guest that was cloned, restored or
-    #     rolled back cannot silently resurrect a node identity, which is what
-    #     P10 cases 3, 6 and 7 examine.
+    #     loses the node key, so the agent MUST re-attest — and with
+    #     EXCHANGE_RETENTION=shred it cannot, because the credential those two
+    #     paths name is gone. The live failure is exactly:
+    #
+    #       unable to load keypair: open /run/spike-exchange/svid.pem:
+    #       no such file or directory
+    #
+    #     The intended recovery is therefore explicit: the operator mints a FRESH
+    #     nonce and re-runs guest-agent-bootstrap.sh, one bootstrap per boot. That
+    #     is a deliberate fail-closed property: a guest that was cloned, restored
+    #     or rolled back cannot silently resurrect a node identity, which is what
+    #     P10 cases 3, 6 and 7 examine. EXCHANGE_RETENTION=keep buys re-attestation
+    #     back by keeping a live private key in guest memory instead.
     #
     #   disk
     #     Writes the node key into data_dir (keys are stored there by the plugin),
     #     so the agent resumes its existing node identity across a restart without
     #     re-attesting, and only needs a new exchange credential once the node
-    #     SVID has expired. Cheaper operationally, but it puts a long-lived
-    #     identity key on the guest filesystem, where a snapshot, a disk image or
-    #     a stolen volume carries it away — and it decouples the node identity
-    #     from a live Incus instance record, which is the property the whole
-    #     architecture is built on.
+    #     SVID has expired — which still needs a fresh nonce, so this defers the
+    #     problem rather than removing it. Cheaper operationally, but it puts a
+    #     long-lived identity key on the guest filesystem, where a snapshot, a
+    #     disk image or a stolen volume carries it away — and it decouples the
+    #     node identity from a live Incus instance record, which is the property
+    #     the whole architecture is built on.
     #
-    # The spike runs `memory` and records the restart cost. Set
-    # AGENT_KEY_MANAGER=disk to render the persistent variant and measure the
-    # other half of the tradeoff.
+    # The spike runs `memory` with EXCHANGE_RETENTION=shred and records the
+    # restart cost. Set AGENT_KEY_MANAGER=disk to render the persistent variant
+    # and measure the other half of the tradeoff.
     KeyManager "@@KEY_MANAGER@@" {
         plugin_data {
             @@KEY_MANAGER_DATA@@

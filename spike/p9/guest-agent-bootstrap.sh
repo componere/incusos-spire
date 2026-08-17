@@ -4,8 +4,9 @@
 # guest, reads the instance's one-time nonce from its own /dev/incus/sock,
 # redeems it for a broker-obtained EXCHANGE SVID, hands that credential to a
 # guest-local spire-agent via NodeAttestor "x509pop", waits for the agent to
-# attest, reports the node SPIFFE ID it obtained, and then destroys the exchange
-# material.
+# attest, reports the node SPIFFE ID it obtained, and then reclaims the exchange
+# material: the files are overwritten and the tmpfs unmounted, which is not the
+# same thing as erasure (see EXCHANGE-KEY HANDLING below).
 #
 # THROWAWAY spike tooling. Appendix C of SPIKE_PLAN.md classifies everything
 # under spike/ as never merged as product code: it is deletable without loss,
@@ -60,36 +61,60 @@
 # "exchange-credential delivery to guest exposes key material", is an explicit
 # pre-production hardening item in the go/no-go). The stance implemented here:
 #
-#   memory-only   the key exists on a tmpfs this script mounts, never on a
-#                 persistent guest filesystem, so it cannot survive a power cut
-#                 and cannot be recovered from a disk image or a snapshot;
+#   memory-backed the key is written only to a tmpfs this script mounts, never to
+#                 a persistent guest filesystem, so it is not recoverable from a
+#                 disk image, a volume or a snapshot;
 #   single-use    it is used for exactly one x509pop attestation;
-#   short-lived   it is shredded and its tmpfs unmounted the moment attestation
-#                 succeeds, so it does not outlive its use.
+#   short-lived   with EXCHANGE_RETENTION=shred (the default) the files are
+#                 overwritten and the tmpfs is unmounted the moment attestation
+#                 succeeds, and both facts are verified.
 #
-# What that does NOT prove: tmpfs pages can be swapped, a memory dump or a
-# hypervisor-side read of guest RAM sees the key while it is live, and shred(1)
-# on tmpfs is an overwrite of pages plus an unlink, not cryptographic erasure —
-# Appendix D rule 2 forbids claiming erasure that has not been demonstrated. The
-# honest claim is scope reduction: memory-only, single-use, short-lived.
+# What is NOT claimed, because none of it has been demonstrated: shred(1) on
+# tmpfs is an overwrite of pages plus an unlink and is NOT cryptographic erasure;
+# tmpfs pages can be SWAPPED, so a copy can exist outside RAM; and a memory dump
+# or a hypervisor-side read of guest RAM sees the key while it is live. Appendix D
+# rule 2 forbids claiming erasure that has not been proven. What IS claimed is an
+# observed end state: the files were overwritten, the mount is gone, and the path
+# is empty.
+#
+# ---------------------------------------------------------------------------
+# RE-ATTESTATION: fresh credential per boot, chosen rather than discovered
+# ---------------------------------------------------------------------------
+# The SPIRE 1.15.2 server's x509pop plugin returns CanReattest: true
+# (evidence/p9/X509POP_BRIEF.md), so a node attested this way is ALLOWED to
+# re-attest — and every attestation, including a re-attestation, re-reads
+# certificate_path and private_key_path. This harness shreds both after the first
+# attestation, so this agent cannot: a restarted agent dies with
+#
+#   unable to load keypair: open /run/spike-exchange/svid.pem: no such file or
+#   directory
+#
+# observed live in evidence/p9/restart-01-agent-process.txt. The spike's answer is
+# one bootstrap per boot with a fresh nonce. EXCHANGE_RETENTION=keep selects the
+# opposite stance deliberately and prints what it costs. See spike/p9/README.md,
+# "The re-attestation story".
 #
 # ---------------------------------------------------------------------------
 # EXIT CODES (the P9 live run judges on these plus the final RESULT line)
 # ---------------------------------------------------------------------------
-#   0   PASS: attested, node SPIFFE ID as expected, exchange material destroyed
+#   0   PASS: attested, node SPIFFE ID as expected, exchange material reclaimed —
+#       or deliberately retained, which the RESULT line names
 #   2   usage: an unexpected argument, a missing required variable, a bad value
 #   3   guest socket read failed (key absent, forbidden, or socket missing)
 #   4   malformed payload, or malformed/missing exchange material in the response
-#       (not PEM, unparseable key, or a key that does not match the certificate)
+#       (not PEM, unparseable key, a key that does not match the certificate, or
+#       a JSON field the broker did not send). Note: this happens AFTER the
+#       broker answered 200, so the nonce is already consumed — a retry needs a
+#       freshly minted one
 #   5   TLS pin failure: the broker certificate does not match the fingerprint
 #       carried in the payload. The nonce is NOT sent
 #   6   a required binary is missing inside the guest
 #   7   no memory-backed directory could be established. Nothing is requested and
 #       the nonce is NOT sent: this script refuses to put an exchange key on a
 #       persistent guest filesystem
-#   8   the exchange material could not be shredded and unmounted. It supersedes
-#       every other code, including 0: a live key that outlived its use is the
-#       most urgent fact of the run
+#   8   the exchange material could not be overwritten and unmounted. It
+#       supersedes every other code, including 0: a live key that outlived its
+#       use is the most urgent fact of the run
 #   10  broker answered 401 (unknown nonce ID or wrong secret)
 #   11  broker answered 409 (nonce exists, state forbids redemption)
 #   12  broker answered 500 (broker internal error)
@@ -143,7 +168,20 @@ ALLOW_UNEXPECTED_EXCHANGE_ID="${ALLOW_UNEXPECTED_EXCHANGE_ID:-0}"
 # on a persistent guest filesystem.
 EXCHANGE_DIR="${EXCHANGE_DIR:-/run/spike-exchange}"
 EXCHANGE_TMPFS_SIZE="${EXCHANGE_TMPFS_SIZE:-1m}"
-KEEP_EXCHANGE_MATERIAL="${KEEP_EXCHANGE_MATERIAL:-0}"
+
+# EXCHANGE_RETENTION decides what happens to the exchange credential once it has
+# been used. It is the re-attestation knob, and it is deliberately explicit:
+#
+#   shred            (default) overwrite the files and unmount the tmpfs as soon
+#                    as attestation succeeds, and on every abort path. The agent
+#                    then CANNOT re-attest; a restart needs a fresh nonce.
+#   keep-on-failure  shred on success, keep the tmpfs when the run FAILED so the
+#                    delivered material can be inspected. Never applies to a
+#                    successful run.
+#   keep             retain the credential in the tmpfs for the agent's lifetime
+#                    so x509pop can reload it and re-attest. This contradicts
+#                    single-use and short-lived, and the script says so loudly.
+EXCHANGE_RETENTION="${EXCHANGE_RETENTION:-shred}"
 
 # Agent configuration inputs. SPIRE_SERVER_ADDRESS has no default on purpose: a
 # wrong guess is indistinguishable from a broken attestation and would be
@@ -168,11 +206,36 @@ AGENT_READY_TIMEOUT="${AGENT_READY_TIMEOUT:-90}"
 # agent cannot even start again, because trust_bundle_path would not exist.
 PERSIST_TRUST_BUNDLE="${PERSIST_TRUST_BUNDLE:-1}"
 
-# Explicit jq filter overrides for the exchange material, so a field-naming
-# difference in the broker's redeem body never blocks a live run.
+# Explicit jq filter overrides for the exchange material. The canonical field
+# names below come from the broker's own response type, so a live run against
+# cmd/incus-spiffe-broker never needs these; they exist for an out-of-tree broker.
 CHAIN_JQ="${CHAIN_JQ:-}"
 KEY_JQ="${KEY_JQ:-}"
 BUNDLE_JQ="${BUNDLE_JQ:-}"
+
+# CANONICAL redeem response field names. This is the contract, read from
+# cmd/incus-spiffe-broker/service.go (type redeemResponse), not guessed:
+#
+#   nonce_id, instance_uuid, instance_name, generation, project, selectors,
+#   exchange_spiffe_id, exchange_cert_chain_pem, exchange_key_pem,
+#   exchange_bundle_pem, exchange_expires_at
+#
+# The P9 live run failed on exactly this: the harness looked only for names the
+# broker does not emit, so a VALID redemption burned its nonce and then exited 4
+# (evidence/p9/chain-02-field-name-mismatch.txt). Each canonical name is now the
+# first thing tried for its blob.
+readonly FIELD_CHAIN='exchange_cert_chain_pem'
+readonly FIELD_KEY='exchange_key_pem'
+readonly FIELD_BUNDLE='exchange_bundle_pem'
+readonly FIELD_EXCHANGE_ID='exchange_spiffe_id'
+readonly FIELD_EXPIRES_AT='exchange_expires_at'
+
+# COMPATIBILITY spellings ONLY, tried after the canonical name in the order given.
+# Nothing in this repository emits them; they exist so a differently-named broker
+# still works. They are not the contract and must never be listed first.
+readonly -a COMPAT_CHAIN=(svid_chain_pem certificate_chain_pem svid_pem certificate_pem chain_pem x509_svid_pem cert_chain_pem)
+readonly -a COMPAT_KEY=(svid_key_pem private_key_pem key_pem x509_svid_key_pem svid_private_key_pem)
+readonly -a COMPAT_BUNDLE=(trust_bundle_pem bundle_pem trust_bundle svid_bundle_pem x509_bundle_pem)
 
 readonly SOCKET_URL_BASE='http://localhost/1.0/config'
 
@@ -248,9 +311,8 @@ body_leaks_secret() {
 }
 
 # json_field prints the first non-empty value among the supplied top-level field
-# names. One canonical spelling per field plus the obvious alternate: a spike
-# broker's field naming is not a frozen contract, and a live run must not die
-# over cosmetics.
+# names. The caller passes the canonical name first; any further name is a
+# compatibility spelling for a broker this repository does not build.
 json_field() {
 	local file="$1"
 	shift
@@ -285,9 +347,10 @@ safe_print() {
 
 # build_material_filter builds a jq filter that looks for each candidate field
 # name at the top level and inside the obvious wrapper objects, and yields the
-# first non-empty string. Used for PEM material, whose value must never pass
-# through a shell variable, so the filter's output is redirected straight to a
-# file.
+# first non-empty string. Names are tried in the order given — canonical first —
+# and `.` before any wrapper, so the broker's own flat field always wins. Used for
+# PEM material, whose value must never pass through a shell variable, so the
+# filter's output is redirected straight to a file.
 build_material_filter() {
 	local out="" name container
 	for name in "$@"; do
@@ -296,6 +359,32 @@ build_material_filter() {
 		done
 	done
 	printf 'first((%s) | select(type == "string" and . != "")) // ""' "$out"
+}
+
+# check_one_filter compiles a caller-supplied override.
+check_one_filter() {
+	local var="$1" filter="$2"
+	[[ -n "$filter" ]] || return 0
+	if ! "$JQ_BIN" -n "$filter" >/dev/null 2>&1; then
+		log "RESULT phase=p9-bootstrap outcome=ERROR reason=invalid_extraction_filter variable=$var"
+		die 2 "$var is not a valid jq filter. The nonce has NOT been sent."
+	fi
+	warn "$var overrides the canonical lookup. The broker in this repository emits"
+	warn "$FIELD_CHAIN / $FIELD_KEY / $FIELD_BUNDLE; an override should not be needed."
+	return 0
+}
+
+# check_extraction_filters runs BEFORE the nonce is transmitted. It cannot verify
+# the broker's field names — the response does not exist yet — but it does remove
+# the one extraction failure this script can still cause by itself: a malformed
+# CHAIN_JQ/KEY_JQ/BUNDLE_JQ override that would burn a nonce and then fail to read
+# the answer it paid for.
+check_extraction_filters() {
+	check_one_filter CHAIN_JQ "$CHAIN_JQ"
+	check_one_filter KEY_JQ "$KEY_JQ"
+	check_one_filter BUNDLE_JQ "$BUNDLE_JQ"
+	log "extraction: primary fields $FIELD_CHAIN, $FIELD_KEY, $FIELD_BUNDLE (the broker's own names);"
+	log "extraction: compatibility spellings are tried only after them"
 }
 
 # extract_pem writes one PEM blob from the response into its own 0600 file inside
@@ -366,9 +455,10 @@ mount_exchange_tmpfs() {
 	log "exchange: $dir is tmpfs (size=$EXCHANGE_TMPFS_SIZE, mode 0700, nosuid,nodev,noexec), memory-backed"
 }
 
-# reclaim_files overwrites and unlinks every file under a directory. On tmpfs this
-# is an overwrite of pages plus an unlink; Appendix D rule 2 forbids calling that
-# cryptographic erasure, and this harness does not.
+# reclaim_files overwrites and unlinks every file under a directory. On tmpfs that
+# is an overwrite of pages plus an unlink — NOT cryptographic erasure, and tmpfs
+# pages can have been swapped out before the overwrite. Appendix D rule 2 forbids
+# claiming otherwise, and this harness does not.
 reclaim_files() {
 	local dir="$1"
 	[[ -d "$dir" ]] || return 0
@@ -377,15 +467,30 @@ reclaim_files() {
 	return 0
 }
 
-# reclaim_exchange_material is the counterpart of mount_exchange_tmpfs: shred the
-# files, then unmount, then VERIFY both. "We tried" is not the requirement; the
-# requirement is that the exchange key does not outlive its single use.
+# reclaim_scratch removes the run's scratch directory — the staged bootstrap
+# payload, the nonce secret file, captured stderr — while leaving the three
+# credential files in place. EXCHANGE_RETENTION=keep retains the exchange
+# CREDENTIAL; it is not a licence for the NONCE to outlive its redemption
+# (Appendix D rule 1), and nothing reads the scratch directory after attestation.
+reclaim_scratch() {
+	[[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] || return 0
+	reclaim_files "$WORK_DIR"
+	rmdir -- "$WORK_DIR" 2>/dev/null || true
+	SECRET_FILE=""
+	log "exchange: scratch directory removed (staged payload and nonce gone); the credential files remain"
+	return 0
+}
+
+# reclaim_exchange_material is the counterpart of mount_exchange_tmpfs: overwrite
+# the files, then unmount, then VERIFY both. "We tried" is not the requirement;
+# the requirement is an observed end state — no files, no mount. What that end
+# state does NOT prove is erasure: see reclaim_files.
 #
-# The running agent is unaffected: it read the certificate, the key and the bundle
-# once, at attestation, and holds what it needs in memory and in its own data dir.
-# It does not reopen these paths until it re-attests — which is exactly the
-# re-attestation story this phase has to define, not discover: with the material
-# gone, a restart needs a fresh nonce.
+# The running agent is unaffected right now: it read the certificate, the key and
+# the bundle once, at attestation, and holds what it needs in memory and in its
+# own data dir. It reopens these paths on its NEXT attestation, which is why the
+# default costs re-attestation and the live restart failed with "unable to load
+# keypair: open $EXCHANGE_DIR/svid.pem: no such file or directory".
 reclaim_exchange_material() {
 	local dir="$EXCHANGE_DIR"
 
@@ -422,7 +527,8 @@ reclaim_exchange_material() {
 
 	MOUNTED=0
 	RECLAIMED="shredded-and-unmounted"
-	log "exchange: material shredded and $dir unmounted (memory-only, single-use, short-lived)"
+	log "exchange: files overwritten (shred -z), $dir unmounted, and both verified — the path is empty"
+	log "exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped"
 	return 0
 }
 
@@ -433,10 +539,20 @@ on_exit() {
 	((TRAP_DONE)) && return
 	TRAP_DONE=1
 
-	if ((MOUNTED == 1)) && ((status != 0)) && [[ "$KEEP_EXCHANGE_MATERIAL" == "1" ]]; then
+	if ((MOUNTED == 1)) && [[ "$EXCHANGE_RETENTION" == "keep" ]]; then
+		RECLAIMED="kept-by-policy"
+		reclaim_scratch
+		warn "EXCHANGE_RETENTION=keep: the exchange PRIVATE KEY is LIVE in $EXCHANGE_DIR and stays there."
+		warn "Destroy it by hand when the agent no longer needs it:"
+		warn "  find $EXCHANGE_DIR -type f -exec shred -u -z -n 1 {} + && umount $EXCHANGE_DIR"
+		exit "$status"
+	fi
+
+	if ((MOUNTED == 1)) && ((status != 0)) && [[ "$EXCHANGE_RETENTION" == "keep-on-failure" ]]; then
 		RECLAIMED="kept-by-request"
-		warn "KEEP_EXCHANGE_MATERIAL=1 and the run failed: the exchange key is LIVE in $EXCHANGE_DIR."
-		warn "It is memory-backed and dies with the guest, but destroy it now unless you are debugging:"
+		warn "EXCHANGE_RETENTION=keep-on-failure and the run failed: the exchange key is LIVE in $EXCHANGE_DIR."
+		warn "It is memory-backed and dies with the guest, but tmpfs pages can be swapped, so destroy it"
+		warn "now unless you are debugging:"
 		warn "  find $EXCHANGE_DIR -type f -exec shred -u -z -n 1 {} + && umount $EXCHANGE_DIR"
 		exit "$status"
 	fi
@@ -670,8 +786,12 @@ redeem() {
 
 # unpack_exchange_material splits the redeem response into the three files the
 # x509pop agent plugin needs. Every one of them lands in the tmpfs at mode 0600.
-# Nothing here is printed except metadata that Appendix D rule 3 permits:
-# SPIFFE IDs, serials, validity windows and certificate counts.
+# Nothing here is printed except metadata that Appendix D rule 3 permits: JSON
+# field NAMES, SPIFFE IDs, serials, validity windows and certificate counts.
+#
+# This runs AFTER the broker answered 200, which means the nonce is already
+# consumed. Every failure below therefore says so: a retry needs a fresh nonce,
+# and a diagnosis that costs a second nonce is a bad diagnosis.
 unpack_exchange_material() {
 	local response="$1"
 
@@ -680,31 +800,35 @@ unpack_exchange_material() {
 	BUNDLE_PATH="$EXCHANGE_DIR/bundle.pem"
 
 	local missing=()
-	extract_pem "$response" "$CERT_PATH" "$CHAIN_JQ" \
-		svid_chain_pem certificate_chain_pem svid_pem certificate_pem chain_pem x509_svid_pem cert_chain_pem ||
-		missing+=(certificate_chain)
-	extract_pem "$response" "$KEY_PATH" "$KEY_JQ" \
-		svid_key_pem private_key_pem key_pem x509_svid_key_pem svid_private_key_pem ||
-		missing+=(private_key)
-	extract_pem "$response" "$BUNDLE_PATH" "$BUNDLE_JQ" \
-		trust_bundle_pem bundle_pem trust_bundle svid_bundle_pem x509_bundle_pem ||
-		missing+=(trust_bundle)
+	extract_pem "$response" "$CERT_PATH" "$CHAIN_JQ" "$FIELD_CHAIN" "${COMPAT_CHAIN[@]}" ||
+		missing+=("$FIELD_CHAIN")
+	extract_pem "$response" "$KEY_PATH" "$KEY_JQ" "$FIELD_KEY" "${COMPAT_KEY[@]}" ||
+		missing+=("$FIELD_KEY")
+	extract_pem "$response" "$BUNDLE_PATH" "$BUNDLE_JQ" "$FIELD_BUNDLE" "${COMPAT_BUNDLE[@]}" ||
+		missing+=("$FIELD_BUNDLE")
 
 	if ((${#missing[@]} > 0)); then
-		# The body is never printed: it carries the key. Only the field names the
-		# harness looked for and could not find.
+		# The body is never printed: it carries the key. The top-level KEY NAMES
+		# are printed, because naming what arrived next to what was wanted turns
+		# this into a one-read diagnosis instead of a bare exit 4.
+		local present
+		present=$("$JQ_BIN" -r 'try (keys_unsorted | join(",")) catch ""' <"$response" 2>/dev/null || printf '')
 		log "RESULT phase=p9-bootstrap outcome=ERROR reason=exchange_material_missing missing=$(
 			IFS=,
 			printf '%s' "${missing[*]}"
-		) nonce_id=$NONCE_ID"
-		die 4 "the redeem response did not carry usable PEM material for: ${missing[*]} (body withheld: it may contain a private key). Override the lookup with CHAIN_JQ / KEY_JQ / BUNDLE_JQ."
+		) response_fields=${present:--} nonce_id=$NONCE_ID nonce_state=consumed"
+		warn "the redeem response is missing these JSON keys: ${missing[*]}"
+		warn "the response's top-level keys were: ${present:-<none>}"
+		warn "the nonce $NONCE_ID IS ALREADY BURNED: the broker answered 200 and commits single use"
+		warn "server-side, so this run cannot be retried — mint a FRESH nonce first."
+		die 4 "the redeem response carried no usable PEM for: ${missing[*]} (body withheld: it carries a private key). Canonical names are $FIELD_CHAIN / $FIELD_KEY / $FIELD_BUNDLE; override with CHAIN_JQ / KEY_JQ / BUNDLE_JQ only for a broker that is not cmd/incus-spiffe-broker."
 	fi
 
 	chmod 0600 -- "$CERT_PATH" "$KEY_PATH" "$BUNDLE_PATH"
 
 	if ! "$OPENSSL_BIN" pkey -in "$KEY_PATH" -noout >/dev/null 2>&1; then
-		log "RESULT phase=p9-bootstrap outcome=ERROR reason=exchange_key_unparseable nonce_id=$NONCE_ID"
-		die 4 "the delivered private key is not a parseable PEM key (value withheld)"
+		log "RESULT phase=p9-bootstrap outcome=ERROR reason=exchange_key_unparseable nonce_id=$NONCE_ID nonce_state=consumed"
+		die 4 "the delivered $FIELD_KEY is not a parseable PEM key (value withheld). The nonce is already burned; a retry needs a fresh one."
 	fi
 
 	# Proof of possession is the whole point of x509pop: the agent must sign the
@@ -715,8 +839,8 @@ unpack_exchange_material() {
 	cert_spki=$("$OPENSSL_BIN" x509 -in "$CERT_PATH" -pubkey -noout 2>/dev/null | sha256_stdin)
 	key_spki=$("$OPENSSL_BIN" pkey -in "$KEY_PATH" -pubout 2>/dev/null | sha256_stdin)
 	if [[ -z "$cert_spki" || "$cert_spki" != "$key_spki" ]]; then
-		log "RESULT phase=p9-bootstrap outcome=FAIL reason=key_certificate_mismatch nonce_id=$NONCE_ID"
-		die 4 "the delivered private key does not match the delivered certificate; x509pop proof of possession would fail"
+		log "RESULT phase=p9-bootstrap outcome=FAIL reason=key_certificate_mismatch nonce_id=$NONCE_ID nonce_state=consumed"
+		die 4 "the delivered $FIELD_KEY does not match $FIELD_CHAIN; x509pop proof of possession would fail"
 	fi
 	log "exchange: private key parses and matches the certificate (public-key digests equal)"
 
@@ -729,13 +853,25 @@ unpack_exchange_material() {
 	EXCHANGE_ID=$(spiffe_id_of_leaf "$CERT_PATH" || printf '')
 
 	log "exchange: certificate_path=$CERT_PATH chain_certs=$chain_certs (leaf first; x509pop accepts leaf+intermediates in one file)"
-	log "exchange: private_key_path=$KEY_PATH mode=0600 (memory-backed, never persisted)"
+	log "exchange: private_key_path=$KEY_PATH mode=0600 (tmpfs only, never written to a persistent guest filesystem)"
 	log "exchange: trust_bundle_path=$BUNDLE_PATH bundle_certs=$bundle_certs"
-	log "exchange: spiffe_id=${EXCHANGE_ID:-<absent>}"
+	log "exchange: spiffe_id=${EXCHANGE_ID:-<absent>} (read from the certificate, which is authoritative)"
 	log "exchange: serial=${serial:--} not_before=${not_before:--} not_after=${EXCHANGE_NOT_AFTER:--}"
 
+	# The two non-PEM canonical fields. They are metadata, so they are read,
+	# printed and cross-checked rather than trusted: a disagreement with the
+	# certificate is worth seeing before the agent starts.
+	local answered_id answered_expiry
+	answered_id=$(json_field "$response" "$FIELD_EXCHANGE_ID")
+	answered_expiry=$(json_field "$response" "$FIELD_EXPIRES_AT")
+	log "exchange: response $FIELD_EXCHANGE_ID=${answered_id:-<absent>} $FIELD_EXPIRES_AT=${answered_expiry:-<absent>}"
+	if [[ -n "$answered_id" && -n "$EXCHANGE_ID" && "$answered_id" != "$EXCHANGE_ID" ]]; then
+		warn "the response's $FIELD_EXCHANGE_ID ($answered_id) is not the certificate's URI SAN ($EXCHANGE_ID);"
+		warn "the certificate wins, because that is what x509pop presents."
+	fi
+
 	if [[ -z "$EXCHANGE_ID" ]]; then
-		log "RESULT phase=p9-bootstrap outcome=ERROR reason=exchange_svid_has_no_uri_san nonce_id=$NONCE_ID"
+		log "RESULT phase=p9-bootstrap outcome=ERROR reason=exchange_svid_has_no_uri_san nonce_id=$NONCE_ID nonce_state=consumed"
 		die 4 "the delivered certificate carries no spiffe:// URI SAN, so it is not an SVID"
 	fi
 }
@@ -825,12 +961,58 @@ render_agent_conf() {
 	fi
 }
 
+# ensure_socket_dir makes the Workload API socket reachable by a NON-ROOT process,
+# which is the phase's actual acceptance claim: an in-guest app — not root — gets
+# its SVID from a standard local Workload API.
+#
+# SPIRE 1.15.2 chmods the socket itself to 0777 (observed live: the host agent's
+# socket is srwxrwxrwx, evidence/p9/deploy-02-socket-exposure.txt), so the only
+# thing that can block an unprivileged workload is a directory it cannot traverse
+# — and this script runs under umask 077, which used to create exactly that. Every
+# component created here is therefore mode 0755, and a pre-existing component is
+# relaxed only when it is not traversable at all (o+x), never widened further.
+#
+# This is not an authorization decision. SPIRE authorizes a workload by attesting
+# it (unix uid/gid/path selectors) and matching a registration entry, never by
+# filesystem mode, so a traversable socket directory is the standard posture and
+# not a loosening of the spike's security model.
+ensure_socket_dir() {
+	local dir="$1" acc="" comp mode
+	local -a comps
+	IFS='/' read -r -a comps <<<"$dir"
+	for comp in "${comps[@]}"; do
+		[[ -n "$comp" ]] || continue
+		acc="$acc/$comp"
+		if [[ ! -d "$acc" ]]; then
+			mkdir -- "$acc" || die 2 "cannot create the Workload API socket directory $acc"
+			chmod 0755 -- "$acc" || die 2 "cannot chmod 0755 $acc"
+			log "agent: created $acc mode=0755 so a non-root workload can traverse to the socket"
+			continue
+		fi
+		mode=$(stat -c %a -- "$acc" 2>/dev/null || printf '')
+		[[ -n "$mode" ]] || continue
+		if (((8#$mode & 1) == 0)); then
+			chmod o+x -- "$acc" || die 2 "cannot make $acc traversable"
+			log "agent: $acc was mode $mode and not traversable; added o+x for the non-root workload path"
+		fi
+	done
+}
+
+# log_socket_exposure records the observed mode of the serving socket and its
+# directory. Both are permitted evidence and both are what a non-root fetch
+# depends on, so the transcript should not require a second command to show them.
+log_socket_exposure() {
+	local dir
+	dir=$(dirname -- "$AGENT_SOCKET_PATH")
+	log "agent: workload_api=$AGENT_SOCKET_PATH socket=$(stat -c '%A %U:%G' -- "$AGENT_SOCKET_PATH" 2>/dev/null || printf '<absent>') dir=$(stat -c '%A %U:%G' -- "$dir" 2>/dev/null || printf '<absent>')"
+}
+
 start_agent() {
 	local conf="$1"
 
 	mkdir -p -- "$AGENT_DATA_DIR"
 	chmod 0700 -- "$AGENT_DATA_DIR"
-	mkdir -p -- "$(dirname -- "$AGENT_SOCKET_PATH")"
+	ensure_socket_dir "$(dirname -- "$AGENT_SOCKET_PATH")"
 
 	case "$AGENT_START_MODE" in
 	background)
@@ -990,10 +1172,14 @@ Frequently set:
   AGENT_SOCKET_PATH         default /tmp/spire-agent/public/api.sock
   AGENT_READY_TIMEOUT       default 90 seconds
   EXCHANGE_DIR              default /run/spike-exchange (mounted tmpfs)
+  EXCHANGE_RETENTION        shred (default) | keep-on-failure | keep
+                            keep retains the exchange PRIVATE KEY in the tmpfs
+                            for the agent's lifetime so x509pop can re-attest
   PERSIST_TRUST_BUNDLE      default 1; public material only, never the key
   PAYLOAD_FILE              read the bootstrap payload from a file, not the socket
-  KEEP_EXCHANGE_MATERIAL    1 keeps the tmpfs on a FAILED run, for debugging
-  CHAIN_JQ KEY_JQ BUNDLE_JQ explicit jq filters for the PEM fields
+  CHAIN_JQ KEY_JQ BUNDLE_JQ jq overrides for a broker that does not emit the
+                            canonical exchange_cert_chain_pem / exchange_key_pem /
+                            exchange_bundle_pem fields
   CURL_BIN JQ_BIN OPENSSL_BIN CONNECT_TIMEOUT MAX_TIME
 
 No path prints the nonce, the exchange private key, or a response body; see the
@@ -1020,6 +1206,10 @@ main() {
 	memory | disk) ;;
 	*) die 2 "AGENT_KEY_MANAGER must be memory or disk, got: $AGENT_KEY_MANAGER" ;;
 	esac
+	case "$EXCHANGE_RETENTION" in
+	shred | keep-on-failure | keep) ;;
+	*) die 2 "EXCHANGE_RETENTION must be shred, keep-on-failure or keep, got: $EXCHANGE_RETENTION" ;;
+	esac
 	[[ -n "$SPIRE_SERVER_ADDRESS" ]] ||
 		die 2 "SPIRE_SERVER_ADDRESS is required: a wrong default would surface as an attestation timeout instead of a configuration error"
 
@@ -1036,6 +1226,7 @@ main() {
 	require_tool shred shred PATH
 	require_tool base64 base64 PATH
 	require_tool find find PATH
+	require_tool stat stat PATH
 
 	[[ $(id -u) == 0 ]] || die 2 "this script must run as guest root: it mounts a tmpfs and reads $GUEST_SOCKET"
 
@@ -1102,6 +1293,10 @@ main() {
 	[[ "$port" != "$host_port" ]] || port=443
 	log "broker: host=$host port=$port"
 
+	# Both checks below run BEFORE the nonce leaves this guest, because both can
+	# still fail: an unpinnable broker, and an extraction filter that would burn a
+	# nonce and then be unable to read the answer.
+	check_extraction_filters
 	pin_broker_certificate "$host" "$port" "$fingerprint"
 
 	local response="$WORK_DIR/redeem.json"
@@ -1152,29 +1347,54 @@ main() {
 	start_agent "$conf"
 
 	if [[ "$AGENT_START_MODE" == "none" ]]; then
-		warn "the exchange key is LIVE in $EXCHANGE_DIR because nothing was started. It is memory-backed"
-		warn "and dies with the guest; destroy it as soon as you are done:"
+		warn "the exchange key is LIVE in $EXCHANGE_DIR because nothing was started. It is tmpfs-backed"
+		warn "and dies with the guest, but tmpfs pages can be swapped; destroy it as soon as you are done:"
 		warn "  find $EXCHANGE_DIR -type f -exec shred -u -z -n 1 {} + && umount $EXCHANGE_DIR"
-		log "RESULT phase=p9-bootstrap outcome=STAGED nonce_id=$NONCE_ID instance_uuid=$INSTANCE_UUID exchange_spiffe_id=$EXCHANGE_ID exchange_not_after=$EXCHANGE_NOT_AFTER conf=$conf exchange_material=live_in_tmpfs"
+		log "RESULT phase=p9-bootstrap outcome=STAGED nonce_id=$NONCE_ID instance_uuid=$INSTANCE_UUID exchange_spiffe_id=$EXCHANGE_ID exchange_not_after=$EXCHANGE_NOT_AFTER conf=$conf exchange_retention=$EXCHANGE_RETENTION exchange_material=live_in_tmpfs"
 		return 0
 	fi
 
 	wait_for_attestation
 	check_node_id
+	log_socket_exposure
 
-	# Attestation is done, so the credential has served its single use. Reclaim it
-	# here rather than leaving it to the exit trap, so the RESULT line can state
-	# the observed outcome instead of an intention.
-	if ! reclaim_exchange_material; then
+	# Attestation is done, so the credential has served its single use. What
+	# happens to it now is EXCHANGE_RETENTION's decision, made here rather than in
+	# the exit trap, so the RESULT line states an observed outcome.
+	if [[ "$EXCHANGE_RETENTION" == "keep" ]]; then
+		RECLAIMED="kept-by-policy"
+		reclaim_scratch
+		warn "############################################################################"
+		warn "EXCHANGE_RETENTION=keep: the exchange PRIVATE KEY STAYS in $EXCHANGE_DIR for the"
+		warn "lifetime of this agent. That is the point — x509pop re-reads certificate_path"
+		warn "and private_key_path on every attestation, so this agent CAN re-attest — and"
+		warn "this is what it costs:"
+		warn "  * the credential is no longer single-use and no longer short-lived;"
+		warn "  * anyone who gets root in this guest can take it and become node $NODE_ID"
+		warn "    until $EXCHANGE_NOT_AFTER;"
+		warn "  * tmpfs pages can be swapped, so 'memory-only' is not a guarantee either."
+		warn "Destroy it by hand when the agent no longer needs it:"
+		warn "  find $EXCHANGE_DIR -type f -exec shred -u -z -n 1 {} + && umount $EXCHANGE_DIR"
+		warn "############################################################################"
+	elif ! reclaim_exchange_material; then
 		log "RESULT phase=p9-bootstrap outcome=ERROR reason=exchange_material_not_reclaimed node_spiffe_id=$NODE_ID exchange_material=live"
 		exit 8
 	fi
 
-	log "note: the exchange credential is gone and the agent keeps running on the node SVID it obtained."
-	log "note: a restart or reboot therefore needs a FRESH nonce and a new exchange SVID — that is the"
-	log "      P9 step-4 re-attestation story, chosen rather than discovered. AGENT_KEY_MANAGER=$AGENT_KEY_MANAGER."
+	if [[ "$EXCHANGE_RETENTION" == "keep" ]]; then
+		log "note: the exchange credential is RETAINED, so this agent can re-attest with x509pop"
+		log "      (the SPIRE 1.15.2 server sets CanReattest=true for x509pop). The spike default"
+		log "      is EXCHANGE_RETENTION=shred; you chose the other side of that tradeoff."
+	else
+		log "note: the exchange credential is gone and the agent keeps running on the node SVID it"
+		log "      obtained. It cannot re-attest: x509pop reloads certificate_path and"
+		log "      private_key_path on every attestation, and a restart from here dies with"
+		log "      'unable to load keypair: open $CERT_PATH: no such file or directory'."
+		log "      A restart or reboot therefore needs a FRESH nonce: one bootstrap per boot,"
+		log "      chosen rather than discovered. AGENT_KEY_MANAGER=$AGENT_KEY_MANAGER."
+	fi
 
-	log "RESULT phase=p9-bootstrap outcome=PASS nonce_id=$NONCE_ID instance_uuid=$INSTANCE_UUID exchange_spiffe_id=$EXCHANGE_ID exchange_not_after=$EXCHANGE_NOT_AFTER node_spiffe_id=$NODE_ID key_manager=$AGENT_KEY_MANAGER workload_api=$AGENT_SOCKET_PATH exchange_material=$RECLAIMED"
+	log "RESULT phase=p9-bootstrap outcome=PASS nonce_id=$NONCE_ID instance_uuid=$INSTANCE_UUID exchange_spiffe_id=$EXCHANGE_ID exchange_not_after=$EXCHANGE_NOT_AFTER node_spiffe_id=$NODE_ID key_manager=$AGENT_KEY_MANAGER workload_api=$AGENT_SOCKET_PATH exchange_retention=$EXCHANGE_RETENTION exchange_material=$RECLAIMED"
 }
 
 CERT_PATH=""

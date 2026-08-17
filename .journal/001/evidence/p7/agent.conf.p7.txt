@@ -1,0 +1,85 @@
+# SPIRE Agent configuration — incusos-spire spike, phase P7.
+# Host identity comes from the physical TPM via tpm_devid node attestation.
+# P7 adds the experimental Broker API endpoint (UDS only) and the external
+# "incus" WorkloadAttestor that implements AttestReference.
+
+agent {
+    data_dir  = "/spike/agent-data"
+    log_level = "DEBUG"
+
+    server_address = "10.55.156.67"
+    server_port    = "8081"
+
+    trust_domain      = "spike.incus.internal"
+    trust_bundle_path = "/spike/conf/agent-trust-bundle.pem"
+
+    # Socket lives on the shared spike volume so P4 workloads can reach it
+    # without widening network exposure.
+    socket_path = "/spike/run/api.sock"
+
+    experimental {
+        broker {
+            # Deliberately NOT in /spike/run: SPIRE rejects a broker socket in
+            # the Workload API socket's directory or a subdirectory.
+            socket_path = "/spike/broker-run/broker.sock"
+
+            # bind_address is intentionally omitted: UDS only.
+            brokers = [
+                {
+                    id = "spiffe://spike.incus.internal/incus-broker"
+                    allowed_reference_types = [
+                        {
+                            type_url = "type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference"
+                        },
+                    ]
+                },
+            ]
+        }
+    }
+}
+
+plugins {
+    # Artifacts provisioned in P1. Hierarchy passwords stay empty: P0 observed
+    # ownerAuthSet, endorsementAuthSet, and lockoutAuthSet all unset.
+    NodeAttestor "tpm_devid" {
+        plugin_data {
+            tpm_device_path = "/dev/tpmrm0"
+            devid_cert_path = "/spike/devid.pem"
+            devid_priv_path = "/spike/devid.priv.blob"
+            devid_pub_path  = "/spike/devid.pub.blob"
+        }
+    }
+
+    # Disk key manager so the agent SVID key survives restart and host reboot.
+    KeyManager "disk" {
+        plugin_data {
+            directory = "/spike/agent-data"
+        }
+    }
+
+    WorkloadAttestor "unix" {
+        plugin_data {}
+    }
+
+    WorkloadAttestor "incus" {
+        plugin_cmd      = "/spike/bin/incus-attestor"
+        plugin_checksum = "24151e7fbe2c80082e8295493f377b3dd2a8033c94b5800862c76c7f20e1c699"
+
+        plugin_data {
+            server_url       = "https://147.135.105.83:8443"
+            client_cert_path = "/spike/incus-creds/client.crt"
+            client_key_path  = "/spike/incus-creds/client.key"
+            server_cert_fingerprint = "822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd"
+            default_project  = "spike-spiffe"
+            request_timeout  = "5s"
+        }
+    }
+}
+
+health_checks {
+    listener_enabled = true
+    bind_address     = "0.0.0.0"
+    bind_port        = "8080"
+    live_path        = "/live"
+    ready_path       = "/ready"
+}

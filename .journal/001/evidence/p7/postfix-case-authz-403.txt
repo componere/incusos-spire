@@ -1,0 +1,4 @@
+ERROR:
+  Code: FailedPrecondition
+  Message: workload attestor "incus" failed: rpc error: code = FailedPrecondition desc = workloadattestor(incus): incus backend authorization failed
+elapsed_seconds=1

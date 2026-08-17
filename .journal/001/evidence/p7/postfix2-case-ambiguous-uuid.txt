@@ -1,0 +1,20 @@
+# Frozen trust rule 1 — two live instances share one volatile.uuid.
+# Setup (admin remote, throwaway instances in project spike-spiffe):
+#   incus launch ovh-incusos:f005c3b83cc4 ovh-incusos:p7-dup-a --project spike-spiffe -c oci.entrypoint="sleep infinity"
+#   incus launch ovh-incusos:f005c3b83cc4 ovh-incusos:p7-dup-b --project spike-spiffe -c oci.entrypoint="sleep infinity"
+#   incus config set ovh-incusos:p7-dup-b volatile.uuid=cd31486d-86b5-4322-91e4-7af3638ace1f --project spike-spiffe
+#
+# $ incus query ovh-incusos:'/1.0/instances?filter=config.volatile.uuid+eq+cd31486d-86b5-4322-91e4-7af3638ace1f&project=spike-spiffe'
+[
+	"/1.0/instances/p7-dup-a?project=spike-spiffe",
+	"/1.0/instances/p7-dup-b?project=spike-spiffe"
+]
+
+# Broker request (only instanceUuid + project supplied):
+#   {"instanceUuid":"cd31486d-86b5-4322-91e4-7af3638ace1f","project":"spike-spiffe"}
+# spiffe.broker.API/SubscribeToX509SVID over unix:///spike/broker-run/broker.sock
+ERROR:
+  Code: PermissionDenied
+  Message: workload attestor "incus" failed: rpc error: code = PermissionDenied desc = workloadattestor(incus): incus instance reference is not attestable
+
+# No SVID was returned. grpcurl exit status 71.

@@ -1,0 +1,6 @@
+Warning: The -rpc-header argument is not used with 'list' or 'describe' verb.
+Failed to list services: rpc error: code = InvalidArgument desc = security header missing from request
+Failed to list services: rpc error: code = InvalidArgument desc = security header missing from request
+grpc.reflection.v1.ServerReflection
+grpc.reflection.v1alpha.ServerReflection
+spiffe.broker.API

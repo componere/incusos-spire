@@ -1,0 +1,4 @@
+ERROR:
+  Code: Unavailable
+  Message: workload attestor "incus" failed: rpc error: code = Unavailable desc = workloadattestor(incus): incus backend unavailable
+elapsed_seconds=6

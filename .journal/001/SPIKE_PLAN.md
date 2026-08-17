@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial: writer grant not expressible) · P6 (schema frozen) — 2026-08-16 · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md)
+**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial: writer grant not expressible) · P6 (schema frozen) · **P7 / H6 PROVEN 2026-08-16** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -409,6 +409,10 @@ Recorded objects (append at creation time):
 | 5 | Server config `authorization.client.tls-restricted`, then `authorization.scriptlet` | P5 | **Unset routing key FIRST**, then the scriptlet |
 | 5 | `$HOME/.spike-incusos-creds/` (both identity private keys, outside all repos) | P5 | `rm -rf` |
 | — | P6 left nothing behind: project `spike-uuid-lab`, instances, snapshots and clones all deleted in-phase | P6 | verified by orchestrator |
+| 2 | Test registration entries (broker + instance) | P7 | Deleted in-phase; `Found 0 entries` verified |
+| 3 | `/spike/bin/incus-attestor` (sha256 `155143a1…4fca4`), `/spike/bin/grpcurl`, `/spike/broker-run/`, protoset and plugin credential dirs on `spike-spire-agent-state` | P7 | Removed with the volume |
+| 3 | `spire-agent` P7 config `/spike/conf/agent.conf` (broker + `incus` attestor); pre-P7 config preserved at `/spike/conf/agent.conf.p3.bak` | P7 | **Left live**; restore the `.p3.bak` file to revert |
+| — | Durable code on branch `feat/incus-attestor` (`c266bc5`, `30a34ac`, `edab2fe`) | P7 | Product code, not teardown; merge via PR |
 
 ## Appendix F — Primary References
 

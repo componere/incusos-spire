@@ -1,0 +1,17 @@
+# Direct Incus probe of the exact query the plugin issues, one identity per block.
+# GET /1.0/instances?filter=config.volatile.uuid+eq+<uuid>&project=spike-spiffe&recursion=1
+
+== spike-attestor-ro (trusted, project-confined read-only) ==
+{"type":"sync","status":"Success","status_code":200,"operation":"","error_code":0,"error":"","metadata":[{ ...<INSTANCE RECORD ELIDED>
+
+HTTP=200
+
+== spike-bootstrap-writer (trusted, DENIED reads in spike-spiffe) ==
+{"type":"sync","status":"Success","status_code":200,"operation":"","error_code":0,"error":"","metadata":[]}
+
+HTTP=200
+
+== self-signed cert not in the Incus trust store ==
+{"type":"error","status":"","status_code":0,"operation":"","error_code":403,"error":"not authorized","metadata":null}
+
+HTTP=403

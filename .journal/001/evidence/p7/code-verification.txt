@@ -1,0 +1,47 @@
+P7 code-evidence index
+Target commit: edab2fe
+Code worktree: /Users/josh/code/componere/incusos-spire/.wt/feat-incus-attestor
+
+OBSERVED TRANSCRIPTS
+
+Appendix C / Appendix B row 16
+- import-graph.txt lists the durable P7 tree.
+- Its non-standard dependency listing shows internal/attestor depends only on itself.
+- Its exact production-import listing shows internal/attestor imports only context, errors, fmt, and strings. This is the pure core with no I/O import.
+- Its repository production-import listing shows internal/broker is the only package that imports github.com/spiffe/go-spiffe/v2/exp/proto/spiffe/broker.
+- The same listing shows cmd/incus-attestor composes internal/attestor and internal/incus/identity without importing the experimental Broker proto.
+
+Appendix B row 17 / Appendix C tests
+- unit-test-output.txt records the exact requested go test -v command and a passing result for internal/attestor, internal/incus/identity, internal/broker, and cmd/incus-attestor.
+- TestPackageImportsStayPure passed. The test's exact production allowlist is context, errors, fmt, and strings.
+- The transcript records tests of the frozen selector derivation, lifecycle-shaped record changes, error taxonomy, retry bounds, plugin mappings, and Broker client contract.
+- The requested golangci-lint run completed with "0 issues."
+
+FROZEN TRUST-RULE CLASSIFICATION
+
+Rule 1 — ENFORCED AND TESTED IN CODE.
+The adapter rejects two or more UUID matches without choosing a record, and the core preserves that error. Passing tests include "two results are ambiguous and never chosen" and "ambiguous reference fails with match count and never picks a record."
+
+Rule 2 — ENFORCED AND TESTED IN CODE.
+The request UUID selects the read; project, generation, and server claims only narrow by equality. Selectors are built from the returned InstanceRecord. Passing tests include exact frozen-selector derivation, record UUID mismatch, project expectation mismatch, generation mismatch, endpoint mismatch, and endpoint-identity reads only when server is set.
+
+Rule 3 — ENFORCED AND TESTED IN CODE.
+A generation mismatch is a hard failure. The core and plugin mapping tests passed.
+
+Rule 4 — DEPLOYMENT INVARIANT, NOT A CODE GUARANTEE.
+internal/incus/identity contains no write operation, but NewReader accepts any syntactically valid credential and cannot determine the credential's Incus authorization. The server-side authorization policy must keep every config-writer principal outside the attestation trust boundary. This classification is stated in internal/incus/identity/doc.go.
+
+Rule 5 — ENFORCED AND TESTED IN CODE.
+Both an empty requested UUID and an empty volatile.uuid in a returned record fail; neither becomes a wildcard. The core and Incus adapter cases passed.
+
+Rule 6 — ENFORCED AND TESTED IN CODE.
+Incus unavailability maps to the transient backend-unavailable class, and the adapter applies a bounded request timeout and bounded retry policy. The timeout and retry-bound cases passed.
+
+Rule 7 — DEPLOYMENT INVARIANT, NOT A CODE GUARANTEE.
+The core emits all six selectors, but SPIRE registration entries may match a subset authored outside this repository. Entry authors must pair incus:name with incus:uuid and should add incus:generation when rollback matters. This classification is stated in internal/attestor/doc.go.
+
+No assumption is used in this index. “Enforced and tested” means both implementation and a named passing test are observable in unit-test-output.txt. “Deployment invariant” means the code explicitly says it cannot enforce the rule.
+
+APPENDIX D SCAN
+
+OBSERVED: the five new artifacts contain no PEM private-key delimiter, TPM secret, nonce value, or encoded blob. The long-base64-candidate regex matched only long Go test identifiers in unit-test-output.txt, including authorization_scriptlet_denied_the_read and unavailable_transport_is_retried_until_it_succeeds; these are plain test names, not encoded data.

@@ -1,0 +1,1 @@
+rpc error: code = Unavailable desc = write unix @->/spike/run/api.sock: write: broken pipe

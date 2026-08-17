@@ -1,0 +1,3 @@
+[31mERRO[0m[0060] workload attestor "incus" failed              [31merror[0m="rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31mpid[0m=23 [31msubsystem_name[0m=workload_attestor
+[31mERRO[0m[0060] Failed to collect all selectors               [31merror[0m="workload attestor \"incus\" failed: rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31msubsystem_name[0m=workload_attestor
+

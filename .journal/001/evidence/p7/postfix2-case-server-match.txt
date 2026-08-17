@@ -1,0 +1,21 @@
+# Control for the case above: identical request with `server` set to the REAL
+# environment.certificate_fingerprint of the Incus endpoint.
+# {"instanceUuid":"6d1c5ee3-5b2f-4ead-8e54-db985302fbdb","project":"spike-spiffe",
+#  "server":"822b00ed474a2574d43223cbf34919b76a64946e145ec246aa4ae2e43318afdd"}
+# DER truncated, private key redacted.
+{
+  "svids": [
+    {
+      "spiffeId": "spiffe://spike.incus.internal/incus/instance/6d1c5ee3-5b2f-4ead-8e54-db985302fbdb",
+      "x509Svid": "MIICSzCCAfCgAwIBAgIQOrDeQXEXkSYJHwVpEFxr1jAKBggqhkjOPQQDAjBQMQswCQYDVQQGEwJVUzEPMA0GA1UEChMGU1BJRkZF...<TRUNCATED-DER>",
+      "x509SvidKey": "<REDACTED-PRIVATE-KEY>",
+      "bundle": "MIICCzCCAbCgAwIBAgIQYcJz6tzp1gTA5Ma0yxYH/TAKBggqhkjOPQQDAjBQMQswCQYDVQQGEwJVUzEPMA0GA1UEChMGU1BJRkZF...<TRUNCATED-DER>"
+    }
+  ]
+}
+ERROR:
+  Code: DeadlineExceeded
+  Message: context deadline exceeded
+
+# The trailing DeadlineExceeded is the client -max-time closing a server-streaming RPC
+# after the first response, not a failure.

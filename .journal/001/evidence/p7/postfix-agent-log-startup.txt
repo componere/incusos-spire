@@ -1,0 +1,10 @@
+[33mWARN[0m[0000] Experimental features have been enabled. Please see doc/upgrading.md for upgrade and compatibility considerations for experimental features. 
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] plugin started                                [37mexternal[0m=true [37mpath[0m=/spike/bin/incus-attestor [37mpid[0m=39 [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] incus workload attestor configured            [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:18:51.264Z"
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=true [36mplugin_name[0m=incus [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] SVID loaded                                   [36mspiffe_id[0m="spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0" [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0000] Starting SPIFFE Broker Endpoint               [36maddress[0m=/spike/broker-run/broker.sock [36mnetwork[0m=unix
+[36mINFO[0m[0000] Starting Workload and SDS APIs                [36maddress[0m=/spike/run/api.sock [36mnetwork[0m=unix [36msubsystem_name[0m=endpoints

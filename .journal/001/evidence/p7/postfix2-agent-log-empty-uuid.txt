@@ -1,0 +1,17 @@
+# Agent side of trust rule 5.
+
+## Case 5a — empty instanceUuid: rejected at the door, no Incus query at all
+[37mDEBU[0m[0850] workload attestor "unix" does not support reference attestation  [37merror[0m="rpc error: code = Unimplemented desc = workloadattestor(unix): AttestReference not implemented" [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37msubsystem_name[0m=workload_attestor
+[37mDEBU[0m[0850] attesting incus instance reference            [37mexternal[0m=true [37minstance_uuid[0m= [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37mproject[0m=spike-spiffe [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:37:38.683Z" [37munverified_server_claim[0m=
+[31mERRO[0m[0850] workload attestor "incus" failed              [31merror[0m="rpc error: code = InvalidArgument desc = workloadattestor(incus): invalid incus instance reference" [31mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [31msubsystem_name[0m=workload_attestor
+[37mDEBU[0m[0850] incus attestation failed                      [37merror[0m="attestor: instance uuid \"\" is empty or not canonical: attestor: invalid instance reference" [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:37:38.683Z"
+[31mERRO[0m[0850] Workload attestation failed                   [31mbroker_peer[0m="spiffe://spike.incus.internal/incus-broker" [31merror[0m="workload attestor \"incus\" failed: rpc error: code = InvalidArgument desc = workloadattestor(incus): invalid incus instance reference" [31mmethod[0m=SubscribeToX509SVID [31mservice[0m=spiffe.broker.API
+
+
+## Case 5b — former uuid against a record that no longer carries volatile.uuid: zero matches
+[37mDEBU[0m[0861] workload attestor "unix" does not support reference attestation  [37merror[0m="rpc error: code = Unimplemented desc = workloadattestor(unix): AttestReference not implemented" [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37msubsystem_name[0m=workload_attestor
+[37mDEBU[0m[0861] attesting incus instance reference            [37mexternal[0m=true [37minstance_uuid[0m=cd31486d-86b5-4322-91e4-7af3638ace1f [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37mproject[0m=spike-spiffe [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:37:49.554Z" [37munverified_server_claim[0m=
+[37mDEBU[0m[0861] incus attestation failed                      [37merror[0m="attestor: instance not found" [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:37:49.559Z"
+[37mDEBU[0m[0861] Reference attested to have selectors          [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37mselectors[0m="[]" [37msubsystem_name[0m=workload_attestor
+[37mDEBU[0m[0861] Subscribing to cache changes                  [37mbroker_peer[0m="spiffe://spike.incus.internal/incus-broker" [37mmethod[0m=SubscribeToX509SVID [37mselectors[0m="[]" [37mservice[0m=spiffe.broker.API
+

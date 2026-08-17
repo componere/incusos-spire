@@ -1,0 +1,8 @@
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[31mERRO[0m[0000] Failed to load plugin                         [31merror[0m="failed to launch plugin: checksums did not match" [31mexternal[0m=true [31mplugin_name[0m=incus [31mplugin_type[0m=WorkloadAttestor [31msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin unloaded                               [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin unloaded                               [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin unloaded                               [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[31mERRO[0m[0000] Agent crashed                                 [31merror[0m="failed to load plugin \"incus\": failed to launch plugin: checksums did not match"

@@ -1,0 +1,8 @@
+# Frozen trust rule 2 / endpoint expectation — the optional `server` claim is CHECKED, not trusted.
+# Same target instance and same socket as the positive path; only the `server` field changed.
+# {"instanceUuid":"6d1c5ee3-5b2f-4ead-8e54-db985302fbdb","project":"spike-spiffe","server":"wrong-server.invalid"}
+ERROR:
+  Code: PermissionDenied
+  Message: workload attestor "incus" failed: rpc error: code = PermissionDenied desc = workloadattestor(incus): incus instance reference is not attestable
+
+# No SVID, no selectors.

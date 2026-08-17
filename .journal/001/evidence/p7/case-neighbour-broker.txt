@@ -1,0 +1,3 @@
+      "spiffeId": "spiffe://spike.incus.internal/incus/instance/6d1c5ee3-5b2f-4ead-8e54-db985302fbdb",
+  Code: DeadlineExceeded
+  Message: stream terminated by RST_STREAM with error code: CANCEL

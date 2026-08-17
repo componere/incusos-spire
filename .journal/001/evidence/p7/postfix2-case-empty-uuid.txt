@@ -1,0 +1,26 @@
+# Frozen trust rule 5 — an empty or absent volatile.uuid is a failure, never a wildcard.
+# Setup: p7-dup-b deleted, then on the still-RUNNING throwaway p7-dup-a:
+#   incus config unset ovh-incusos:p7-dup-a volatile.uuid --project spike-spiffe
+#   incus config get  ovh-incusos:p7-dup-a volatile.uuid --project spike-spiffe   -> (empty)
+#   incus query '/1.0/instances/p7-dup-a?project=spike-spiffe' -> record carries
+#     "volatile.uuid.generation": "cd31486d-86b5-4322-91e4-7af3638ace1f" and NO volatile.uuid key.
+#
+# Incus itself refuses the wildcard form of the filter the plugin would have to build:
+# $ incus query ovh-incusos:'/1.0/instances?filter=config.volatile.uuid+eq+&project=spike-spiffe'
+Error: Invalid filter: clause has no value
+
+## Case 5a — request carries an EMPTY instanceUuid
+# {"instanceUuid":"","project":"spike-spiffe"}
+ERROR:
+  Code: InvalidArgument
+  Message: workload attestor "incus" failed: rpc error: code = InvalidArgument desc = workloadattestor(incus): invalid incus instance reference
+
+## Case 5b — request carries the instance's FORMER uuid; the live record no longer has one
+# {"instanceUuid":"cd31486d-86b5-4322-91e4-7af3638ace1f","project":"spike-spiffe"}
+{}
+ERROR:
+  Code: DeadlineExceeded
+  Message: context deadline exceeded
+
+# Neither form produced a selector or an SVID. 5a fails closed before any Incus call;
+# 5b reaches Incus, matches zero records, and returns the empty instance-not-found result.

@@ -1,0 +1,30 @@
+[33mWARN[0m[0000] Experimental features have been enabled. Please see doc/upgrading.md for upgrade and compatibility considerations for experimental features. 
+[33mWARN[0m[0000] Current umask 0022 is too permissive; setting umask 0027 
+[36mINFO[0m[0000] Starting agent                                [36mdata_dir[0m=/spike/agent-data [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] starting plugin                               [37margs[0m="[/spike/bin/incus-attestor]" [37mexternal[0m=true [37mpath[0m=/spike/bin/incus-attestor [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] plugin started                                [37mexternal[0m=true [37mpath[0m=/spike/bin/incus-attestor [37mpid[0m=41 [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] waiting for RPC address                       [37mexternal[0m=true [37mplugin[0m=/spike/bin/incus-attestor [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] plugin address                                [37maddress[0m=/tmp/plugin3545496856 [37mexternal[0m=true [37mnetwork[0m=unix [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T01:51:07.713Z"
+[37mDEBU[0m[0000] using plugin                                  [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog [37mversion[0m=1
+[37mDEBU[0m[0000] incus workload attestor configured            [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T01:51:07.718Z"
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=true [36mplugin_name[0m=incus [36mplugin_type[0m=WorkloadAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=true [36mplugin_name[0m=incus [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0000] SVID loaded                                   [36mspiffe_id[0m="spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0" [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0000] Success after 2562047h47m16.854775807s attempts=0  [36mLogger[0m=TrustBundleSources
+[36mINFO[0m[0000] Setting use.                                  [36mLogger[0m=TrustBundleSources
+[37mDEBU[0m[0000] Bundle updated                                [37msubsystem_name[0m=cache_manager [37mtrust_domain_id[0m=spike.incus.internal
+[37mDEBU[0m[0000] Bundle added                                  [37msubsystem_name[0m=svid_store_cache [37mtrust_domain_id[0m=spike.incus.internal
+[36mINFO[0m[0000] Starting SPIFFE Broker Endpoint               [36maddress[0m=/spike/broker-run/broker.sock [36mnetwork[0m=unix
+[36mINFO[0m[0000] Starting Workload and SDS APIs                [36maddress[0m=/spike/run/api.sock [36mnetwork[0m=unix [36msubsystem_name[0m=endpoints
+[37mDEBU[0m[0000] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0000] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+[31mERRO[0m[0000] workload attestor "incus" failed              [31merror[0m="rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31mpid[0m=23 [31msubsystem_name[0m=workload_attestor
+[31mERRO[0m[0000] Failed to collect all selectors               [31merror[0m="workload attestor \"incus\" failed: rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31msubsystem_name[0m=workload_attestor
+

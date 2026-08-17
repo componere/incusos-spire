@@ -1,0 +1,40 @@
+# Close-out state after the trust-rule gap-closure run.
+# Final state verification
+$ incus list --project spike-spiffe
+       NAME          STATE  
+ spike-authz-probe  RUNNING 
+
+$ incus config get spike-authz-probe volatile.uuid / .generation
+6d1c5ee3-5b2f-4ead-8e54-db985302fbdb
+6d1c5ee3-5b2f-4ead-8e54-db985302fbdb
+
+$ spire-server entry show
+Found 0 entries
+$ spire-server agent list
+Found 1 attested agent:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 03:39:35 +0000 UTC
+Serial number     : 290940621483502406479590543584054477780
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+$ agent health (from the neighbouring container spike-probe)
+/live  -> 200
+/ready -> 200
+
+$ incus query ovh-incusos:/os/1.0/system/security   (non-secret fields only; the raw response
+  carries encryption recovery keys and is therefore NEVER copied into the journal)
+{"secure_boot_enabled":true,
+ "encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}],
+ "tpm_status":"ok",
+ "system_state_is_trusted":true}
+
+# Throwaway instances p7-dup-a (later renamed p7-renamed) and p7-dup-b: deleted.
+# Registration entries 842b8f68-… and ff9da0c7-…: deleted, "Deleted 1 entries successfully" each.
+# spike-authz-probe: volatile.uuid and volatile.uuid.generation both still
+#   6d1c5ee3-5b2f-4ead-8e54-db985302fbdb — never written to during this run.
+# No TPM command, no reboot, no `incus admin os` mutation, no agent configuration change,
+# no code-worktree change, no repository gate, no Git command.

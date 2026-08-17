@@ -1,0 +1,467 @@
+P7 unit-test and lint transcript
+Target commit: edab2fe
+Code worktree: /Users/josh/code/componere/incusos-spire/.wt/feat-incus-attestor
+
+$ go test -v ./internal/attestor/ ./internal/incus/identity/ ./internal/broker/ ./cmd/incus-attestor/
+=== RUN   TestSelectorTypeAndValue
+=== PAUSE TestSelectorTypeAndValue
+=== RUN   TestDeriveEmitsExactFrozenSelectors
+=== PAUSE TestDeriveEmitsExactFrozenSelectors
+=== RUN   TestDeriveRenameChangesOnlyName
+=== PAUSE TestDeriveRenameChangesOnlyName
+=== RUN   TestDeriveCloneChangesOnlyUUIDAndGeneration
+=== PAUSE TestDeriveCloneChangesOnlyUUIDAndGeneration
+=== RUN   TestDeriveRestoreChangesOnlyGeneration
+=== PAUSE TestDeriveRestoreChangesOnlyGeneration
+=== RUN   TestDeriveTrustRules
+=== PAUSE TestDeriveTrustRules
+=== RUN   TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet
+=== PAUSE TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet
+=== RUN   TestDeriveAllowsConfiguredStatuses
+=== PAUSE TestDeriveAllowsConfiguredStatuses
+=== RUN   TestPackageImportsStayPure
+=== PAUSE TestPackageImportsStayPure
+=== CONT  TestSelectorTypeAndValue
+--- PASS: TestSelectorTypeAndValue (0.00s)
+=== CONT  TestDeriveRestoreChangesOnlyGeneration
+=== CONT  TestDeriveTrustRules
+=== CONT  TestDeriveAllowsConfiguredStatuses
+=== RUN   TestDeriveTrustRules/empty_instance_uuid_is_invalid_and_never_a_wildcard
+=== CONT  TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet
+=== CONT  TestDeriveRenameChangesOnlyName
+=== CONT  TestDeriveEmitsExactFrozenSelectors
+=== CONT  TestDeriveCloneChangesOnlyUUIDAndGeneration
+=== CONT  TestPackageImportsStayPure
+=== RUN   TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_empty_does_not_call_endpoint_identity
+=== PAUSE TestDeriveTrustRules/empty_instance_uuid_is_invalid_and_never_a_wildcard
+=== PAUSE TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_empty_does_not_call_endpoint_identity
+=== RUN   TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_name_match_calls_endpoint_identity_once
+=== PAUSE TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_name_match_calls_endpoint_identity_once
+=== RUN   TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/certificate_fingerprint_match_calls_endpoint_identity_once
+=== PAUSE TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/certificate_fingerprint_match_calls_endpoint_identity_once
+=== CONT  TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_empty_does_not_call_endpoint_identity
+=== RUN   TestDeriveTrustRules/non-canonical_instance_uuid_is_invalid
+=== PAUSE TestDeriveTrustRules/non-canonical_instance_uuid_is_invalid
+=== CONT  TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/certificate_fingerprint_match_calls_endpoint_identity_once
+=== RUN   TestDeriveTrustRules/uppercase_uuid_is_not_canonical
+--- PASS: TestDeriveAllowsConfiguredStatuses (0.00s)
+=== CONT  TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_name_match_calls_endpoint_identity_once
+=== PAUSE TestDeriveTrustRules/uppercase_uuid_is_not_canonical
+--- PASS: TestDeriveEmitsExactFrozenSelectors (0.00s)
+=== RUN   TestDeriveTrustRules/not_found_is_distinguishable_from_backend_error
+--- PASS: TestDeriveRestoreChangesOnlyGeneration (0.00s)
+=== PAUSE TestDeriveTrustRules/not_found_is_distinguishable_from_backend_error
+=== RUN   TestDeriveTrustRules/backend_transport_failure_wraps_ErrBackendUnavailable
+=== PAUSE TestDeriveTrustRules/backend_transport_failure_wraps_ErrBackendUnavailable
+=== RUN   TestDeriveTrustRules/ambiguous_reference_fails_with_match_count_and_never_picks_a_record
+--- PASS: TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet (0.00s)
+    --- PASS: TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_empty_does_not_call_endpoint_identity (0.00s)
+    --- PASS: TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/server_name_match_calls_endpoint_identity_once (0.00s)
+    --- PASS: TestDeriveCallsReadEndpointIdentityOnlyWhenServerSet/certificate_fingerprint_match_calls_endpoint_identity_once (0.00s)
+=== PAUSE TestDeriveTrustRules/ambiguous_reference_fails_with_match_count_and_never_picks_a_record
+=== RUN   TestDeriveTrustRules/empty_volatile.uuid_is_unusable
+--- PASS: TestDeriveRenameChangesOnlyName (0.00s)
+=== PAUSE TestDeriveTrustRules/empty_volatile.uuid_is_unusable
+=== RUN   TestDeriveTrustRules/record_uuid_that_does_not_equal_the_requested_uuid_is_unusable
+--- PASS: TestDeriveCloneChangesOnlyUUIDAndGeneration (0.00s)
+=== PAUSE TestDeriveTrustRules/record_uuid_that_does_not_equal_the_requested_uuid_is_unusable
+=== RUN   TestDeriveTrustRules/generation_mismatch_is_a_hard_failure
+=== PAUSE TestDeriveTrustRules/generation_mismatch_is_a_hard_failure
+=== RUN   TestDeriveTrustRules/project_expectation_mismatch_is_unusable
+=== PAUSE TestDeriveTrustRules/project_expectation_mismatch_is_unusable
+=== RUN   TestDeriveTrustRules/endpoint_mismatch_fails
+=== PAUSE TestDeriveTrustRules/endpoint_mismatch_fails
+=== RUN   TestDeriveTrustRules/non-Running_status_fails_under_the_default_policy
+=== PAUSE TestDeriveTrustRules/non-Running_status_fails_under_the_default_policy
+=== CONT  TestDeriveTrustRules/empty_instance_uuid_is_invalid_and_never_a_wildcard
+=== CONT  TestDeriveTrustRules/empty_volatile.uuid_is_unusable
+=== CONT  TestDeriveTrustRules/project_expectation_mismatch_is_unusable
+=== CONT  TestDeriveTrustRules/not_found_is_distinguishable_from_backend_error
+--- PASS: TestPackageImportsStayPure (0.00s)
+=== CONT  TestDeriveTrustRules/generation_mismatch_is_a_hard_failure
+=== CONT  TestDeriveTrustRules/uppercase_uuid_is_not_canonical
+=== CONT  TestDeriveTrustRules/non-canonical_instance_uuid_is_invalid
+=== CONT  TestDeriveTrustRules/non-Running_status_fails_under_the_default_policy
+=== CONT  TestDeriveTrustRules/backend_transport_failure_wraps_ErrBackendUnavailable
+=== CONT  TestDeriveTrustRules/record_uuid_that_does_not_equal_the_requested_uuid_is_unusable
+=== CONT  TestDeriveTrustRules/ambiguous_reference_fails_with_match_count_and_never_picks_a_record
+=== CONT  TestDeriveTrustRules/endpoint_mismatch_fails
+--- PASS: TestDeriveTrustRules (0.00s)
+    --- PASS: TestDeriveTrustRules/empty_instance_uuid_is_invalid_and_never_a_wildcard (0.00s)
+    --- PASS: TestDeriveTrustRules/uppercase_uuid_is_not_canonical (0.00s)
+    --- PASS: TestDeriveTrustRules/not_found_is_distinguishable_from_backend_error (0.00s)
+    --- PASS: TestDeriveTrustRules/empty_volatile.uuid_is_unusable (0.00s)
+    --- PASS: TestDeriveTrustRules/project_expectation_mismatch_is_unusable (0.00s)
+    --- PASS: TestDeriveTrustRules/non-canonical_instance_uuid_is_invalid (0.00s)
+    --- PASS: TestDeriveTrustRules/non-Running_status_fails_under_the_default_policy (0.00s)
+    --- PASS: TestDeriveTrustRules/record_uuid_that_does_not_equal_the_requested_uuid_is_unusable (0.00s)
+    --- PASS: TestDeriveTrustRules/ambiguous_reference_fails_with_match_count_and_never_picks_a_record (0.00s)
+    --- PASS: TestDeriveTrustRules/generation_mismatch_is_a_hard_failure (0.00s)
+    --- PASS: TestDeriveTrustRules/backend_transport_failure_wraps_ErrBackendUnavailable (0.00s)
+    --- PASS: TestDeriveTrustRules/endpoint_mismatch_fails (0.00s)
+PASS
+ok  	github.com/componere/incusos-spire/internal/attestor	0.367s
+=== RUN   TestReadInstanceByUUIDMapsCapturedRecord
+=== PAUSE TestReadInstanceByUUIDMapsCapturedRecord
+=== RUN   TestReadInstanceByUUIDErrorTaxonomy
+=== PAUSE TestReadInstanceByUUIDErrorTaxonomy
+=== RUN   TestReadInstanceByUUIDUsesDefaultProjectWhenEmpty
+=== PAUSE TestReadInstanceByUUIDUsesDefaultProjectWhenEmpty
+=== RUN   TestReadEndpointIdentityMapsServerEnvironment
+=== PAUSE TestReadEndpointIdentityMapsServerEnvironment
+=== RUN   TestReadInstanceByUUIDTimeoutIsBackendUnavailable
+=== PAUSE TestReadInstanceByUUIDTimeoutIsBackendUnavailable
+=== RUN   TestReadEndpointIdentityTLSPinFailureIsPermanent
+=== PAUSE TestReadEndpointIdentityTLSPinFailureIsPermanent
+=== RUN   TestReadEndpointIdentityTransportFailureIsBackendUnavailable
+=== PAUSE TestReadEndpointIdentityTransportFailureIsBackendUnavailable
+=== RUN   TestReadInstanceByUUIDClassifiesAuthorizationFailure
+=== PAUSE TestReadInstanceByUUIDClassifiesAuthorizationFailure
+=== RUN   TestReadInstanceByUUIDClassifiesPermanentFailures
+=== PAUSE TestReadInstanceByUUIDClassifiesPermanentFailures
+=== RUN   TestReadEndpointIdentityEmptyIdentityIsPermanent
+=== PAUSE TestReadEndpointIdentityEmptyIdentityIsPermanent
+=== RUN   TestReadInstanceByUUIDRetriesTransientTransportError
+=== PAUSE TestReadInstanceByUUIDRetriesTransientTransportError
+=== RUN   TestReadInstanceByUUIDStopsAtTheRetryBound
+=== PAUSE TestReadInstanceByUUIDStopsAtTheRetryBound
+=== RUN   TestDeriveKeepsTheAdapterRetryClass
+=== PAUSE TestDeriveKeepsTheAdapterRetryClass
+=== RUN   TestNewReaderValidatesConfig
+=== PAUSE TestNewReaderValidatesConfig
+=== RUN   TestNewReaderAcceptsFingerprintPin
+=== PAUSE TestNewReaderAcceptsFingerprintPin
+=== CONT  TestReadInstanceByUUIDMapsCapturedRecord
+=== CONT  TestReadInstanceByUUIDClassifiesPermanentFailures
+=== RUN   TestReadInstanceByUUIDClassifiesPermanentFailures/unexpected_HTTP_status
+=== PAUSE TestReadInstanceByUUIDClassifiesPermanentFailures/unexpected_HTTP_status
+=== RUN   TestReadInstanceByUUIDClassifiesPermanentFailures/malformed_response_body
+=== CONT  TestDeriveKeepsTheAdapterRetryClass
+=== CONT  TestReadInstanceByUUIDRetriesTransientTransportError
+=== RUN   TestDeriveKeepsTheAdapterRetryClass/authorization_denial_stays_non-retryable
+=== PAUSE TestDeriveKeepsTheAdapterRetryClass/authorization_denial_stays_non-retryable
+=== RUN   TestDeriveKeepsTheAdapterRetryClass/permanent_protocol_failure_stays_non-retryable
+=== PAUSE TestDeriveKeepsTheAdapterRetryClass/permanent_protocol_failure_stays_non-retryable
+=== CONT  TestDeriveKeepsTheAdapterRetryClass/authorization_denial_stays_non-retryable
+=== CONT  TestReadEndpointIdentityEmptyIdentityIsPermanent
+=== CONT  TestReadInstanceByUUIDTimeoutIsBackendUnavailable
+=== CONT  TestReadInstanceByUUIDClassifiesAuthorizationFailure
+=== PAUSE TestReadInstanceByUUIDClassifiesPermanentFailures/malformed_response_body
+=== CONT  TestReadInstanceByUUIDUsesDefaultProjectWhenEmpty
+=== RUN   TestReadInstanceByUUIDClassifiesAuthorizationFailure/client_certificate_rejected
+=== RUN   TestReadInstanceByUUIDClassifiesPermanentFailures/incus_error_envelope
+=== PAUSE TestReadInstanceByUUIDClassifiesPermanentFailures/incus_error_envelope
+=== CONT  TestReadInstanceByUUIDClassifiesPermanentFailures/unexpected_HTTP_status
+=== CONT  TestDeriveKeepsTheAdapterRetryClass/permanent_protocol_failure_stays_non-retryable
+=== CONT  TestNewReaderValidatesConfig
+=== PAUSE TestReadInstanceByUUIDClassifiesAuthorizationFailure/client_certificate_rejected
+=== RUN   TestReadInstanceByUUIDClassifiesAuthorizationFailure/authorization_scriptlet_denied_the_read
+=== PAUSE TestReadInstanceByUUIDClassifiesAuthorizationFailure/authorization_scriptlet_denied_the_read
+=== CONT  TestReadInstanceByUUIDClassifiesPermanentFailures/incus_error_envelope
+=== CONT  TestNewReaderAcceptsFingerprintPin
+=== CONT  TestReadInstanceByUUIDStopsAtTheRetryBound
+=== CONT  TestReadEndpointIdentityMapsServerEnvironment
+=== CONT  TestReadInstanceByUUIDErrorTaxonomy
+=== RUN   TestReadInstanceByUUIDErrorTaxonomy/zero_results_are_not_found
+=== PAUSE TestReadInstanceByUUIDErrorTaxonomy/zero_results_are_not_found
+=== RUN   TestReadInstanceByUUIDErrorTaxonomy/two_results_are_ambiguous_and_never_chosen
+=== CONT  TestReadEndpointIdentityTransportFailureIsBackendUnavailable
+=== CONT  TestReadEndpointIdentityTLSPinFailureIsPermanent
+=== PAUSE TestReadInstanceByUUIDErrorTaxonomy/two_results_are_ambiguous_and_never_chosen
+=== RUN   TestReadInstanceByUUIDErrorTaxonomy/empty_volatile.uuid_is_unusable
+=== PAUSE TestReadInstanceByUUIDErrorTaxonomy/empty_volatile.uuid_is_unusable
+=== CONT  TestReadInstanceByUUIDClassifiesPermanentFailures/malformed_response_body
+--- PASS: TestNewReaderAcceptsFingerprintPin (0.01s)
+=== RUN   TestNewReaderValidatesConfig/missing_server_URL
+=== PAUSE TestNewReaderValidatesConfig/missing_server_URL
+=== RUN   TestNewReaderValidatesConfig/http_is_rejected
+=== PAUSE TestNewReaderValidatesConfig/http_is_rejected
+=== RUN   TestNewReaderValidatesConfig/missing_default_project
+=== PAUSE TestNewReaderValidatesConfig/missing_default_project
+=== CONT  TestReadInstanceByUUIDClassifiesAuthorizationFailure/client_certificate_rejected
+=== RUN   TestNewReaderValidatesConfig/zero_timeout
+=== PAUSE TestNewReaderValidatesConfig/zero_timeout
+=== RUN   TestNewReaderValidatesConfig/both_server_pins
+=== PAUSE TestNewReaderValidatesConfig/both_server_pins
+=== RUN   TestNewReaderValidatesConfig/neither_server_pin
+=== PAUSE TestNewReaderValidatesConfig/neither_server_pin
+=== CONT  TestReadInstanceByUUIDClassifiesAuthorizationFailure/authorization_scriptlet_denied_the_read
+--- PASS: TestReadEndpointIdentityTransportFailureIsBackendUnavailable (0.01s)
+=== CONT  TestReadInstanceByUUIDErrorTaxonomy/zero_results_are_not_found
+=== CONT  TestReadInstanceByUUIDErrorTaxonomy/empty_volatile.uuid_is_unusable
+2026/08/16 19:36:52 http: TLS handshake error from 127.0.0.1:63106: remote error: tls: bad certificate
+--- PASS: TestReadInstanceByUUIDUsesDefaultProjectWhenEmpty (0.02s)
+=== CONT  TestReadInstanceByUUIDErrorTaxonomy/two_results_are_ambiguous_and_never_chosen
+--- PASS: TestReadInstanceByUUIDMapsCapturedRecord (0.02s)
+=== CONT  TestNewReaderValidatesConfig/missing_server_URL
+=== CONT  TestNewReaderValidatesConfig/zero_timeout
+=== CONT  TestNewReaderValidatesConfig/neither_server_pin
+=== CONT  TestNewReaderValidatesConfig/both_server_pins
+=== CONT  TestNewReaderValidatesConfig/missing_default_project
+=== CONT  TestNewReaderValidatesConfig/http_is_rejected
+--- PASS: TestReadEndpointIdentityTLSPinFailureIsPermanent (0.02s)
+--- PASS: TestDeriveKeepsTheAdapterRetryClass (0.00s)
+    --- PASS: TestDeriveKeepsTheAdapterRetryClass/permanent_protocol_failure_stays_non-retryable (0.02s)
+    --- PASS: TestDeriveKeepsTheAdapterRetryClass/authorization_denial_stays_non-retryable (0.02s)
+--- PASS: TestReadEndpointIdentityEmptyIdentityIsPermanent (0.03s)
+--- PASS: TestReadEndpointIdentityMapsServerEnvironment (0.02s)
+--- PASS: TestReadInstanceByUUIDClassifiesPermanentFailures (0.00s)
+    --- PASS: TestReadInstanceByUUIDClassifiesPermanentFailures/unexpected_HTTP_status (0.02s)
+    --- PASS: TestReadInstanceByUUIDClassifiesPermanentFailures/malformed_response_body (0.02s)
+    --- PASS: TestReadInstanceByUUIDClassifiesPermanentFailures/incus_error_envelope (0.03s)
+--- PASS: TestReadInstanceByUUIDClassifiesAuthorizationFailure (0.00s)
+    --- PASS: TestReadInstanceByUUIDClassifiesAuthorizationFailure/authorization_scriptlet_denied_the_read (0.01s)
+    --- PASS: TestReadInstanceByUUIDClassifiesAuthorizationFailure/client_certificate_rejected (0.01s)
+--- PASS: TestNewReaderValidatesConfig (0.02s)
+    --- PASS: TestNewReaderValidatesConfig/missing_server_URL (0.00s)
+    --- PASS: TestNewReaderValidatesConfig/zero_timeout (0.00s)
+    --- PASS: TestNewReaderValidatesConfig/neither_server_pin (0.00s)
+    --- PASS: TestNewReaderValidatesConfig/both_server_pins (0.00s)
+    --- PASS: TestNewReaderValidatesConfig/missing_default_project (0.00s)
+    --- PASS: TestNewReaderValidatesConfig/http_is_rejected (0.00s)
+--- PASS: TestReadInstanceByUUIDRetriesTransientTransportError (0.03s)
+--- PASS: TestReadInstanceByUUIDStopsAtTheRetryBound (0.03s)
+--- PASS: TestReadInstanceByUUIDErrorTaxonomy (0.00s)
+    --- PASS: TestReadInstanceByUUIDErrorTaxonomy/empty_volatile.uuid_is_unusable (0.01s)
+    --- PASS: TestReadInstanceByUUIDErrorTaxonomy/zero_results_are_not_found (0.01s)
+    --- PASS: TestReadInstanceByUUIDErrorTaxonomy/two_results_are_ambiguous_and_never_chosen (0.01s)
+--- PASS: TestReadInstanceByUUIDTimeoutIsBackendUnavailable (0.06s)
+PASS
+ok  	github.com/componere/incusos-spire/internal/incus/identity	0.625s
+=== RUN   TestFetchX509SVIDNestsTheReferenceTwice
+--- PASS: TestFetchX509SVIDNestsTheReferenceTwice (0.00s)
+=== RUN   TestFetchX509SVIDSendsTheMandatorySecurityHeader
+--- PASS: TestFetchX509SVIDSendsTheMandatorySecurityHeader (0.00s)
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/missing_security_header
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/reference_type_outside_the_broker_allowlist
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/attestor_denied_the_reference_after_attesting_it
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/plugin_reported_a_backend_authorization_failure
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/broker_socket_not_accepting_connections
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/no_usable_TLS_peer_identity
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/server_side_deadline_exceeded
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/no_attestor_handled_the_reference
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/response_carried_an_empty_SVID_list
+=== RUN   TestFetchX509SVIDMapsStatusCodesToSentinels/stream_ended_before_an_SVID_arrived
+--- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/missing_security_header (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/reference_type_outside_the_broker_allowlist (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/attestor_denied_the_reference_after_attesting_it (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/plugin_reported_a_backend_authorization_failure (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/broker_socket_not_accepting_connections (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/no_usable_TLS_peer_identity (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/server_side_deadline_exceeded (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/no_attestor_handled_the_reference (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/response_carried_an_empty_SVID_list (0.00s)
+    --- PASS: TestFetchX509SVIDMapsStatusCodesToSentinels/stream_ended_before_an_SVID_arrived (0.00s)
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures/unavailable_transport_is_retried_until_it_succeeds
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures/unavailable_transport_is_retried_a_bounded_number_of_times
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures/allowlist_denial_is_never_retried
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures/post-attestation_denial_is_never_retried
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures/plugin_backend_authorization_failure_is_never_retried
+=== RUN   TestFetchX509SVIDRetriesOnlyTransientTransportFailures/invalid_argument_is_never_retried
+--- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures (0.00s)
+    --- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures/unavailable_transport_is_retried_until_it_succeeds (0.00s)
+    --- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures/unavailable_transport_is_retried_a_bounded_number_of_times (0.00s)
+    --- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures/allowlist_denial_is_never_retried (0.00s)
+    --- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures/post-attestation_denial_is_never_retried (0.00s)
+    --- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures/plugin_backend_authorization_failure_is_never_retried (0.00s)
+    --- PASS: TestFetchX509SVIDRetriesOnlyTransientTransportFailures/invalid_argument_is_never_retried (0.00s)
+=== RUN   TestFetchX509SVIDRejectsAReferenceWithoutATypeURL
+=== RUN   TestFetchX509SVIDRejectsAReferenceWithoutATypeURL/nil_reference
+=== RUN   TestFetchX509SVIDRejectsAReferenceWithoutATypeURL/empty_reference
+--- PASS: TestFetchX509SVIDRejectsAReferenceWithoutATypeURL (0.00s)
+    --- PASS: TestFetchX509SVIDRejectsAReferenceWithoutATypeURL/nil_reference (0.00s)
+    --- PASS: TestFetchX509SVIDRejectsAReferenceWithoutATypeURL/empty_reference (0.00s)
+=== RUN   TestFetchX509SVIDTimesOutWhenNoSVIDArrives
+--- PASS: TestFetchX509SVIDTimesOutWhenNoSVIDArrives (0.05s)
+=== RUN   TestFetchX509SVIDClosesTheStreamAfterTheFirstSVID
+--- PASS: TestFetchX509SVIDClosesTheStreamAfterTheFirstSVID (0.00s)
+=== RUN   TestNewClientRejectsAnInvalidConfig
+=== RUN   TestNewClientRejectsAnInvalidConfig/missing_broker_socket
+=== RUN   TestNewClientRejectsAnInvalidConfig/relative_broker_socket
+=== RUN   TestNewClientRejectsAnInvalidConfig/missing_workload_api_socket
+=== RUN   TestNewClientRejectsAnInvalidConfig/no_endpoint_authorization
+=== RUN   TestNewClientRejectsAnInvalidConfig/ambiguous_endpoint_authorization
+=== RUN   TestNewClientRejectsAnInvalidConfig/non_positive_timeout
+=== RUN   TestNewClientRejectsAnInvalidConfig/unparseable_agent_id
+=== RUN   TestNewClientRejectsAnInvalidConfig/unparseable_trust_domain
+--- PASS: TestNewClientRejectsAnInvalidConfig (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/missing_broker_socket (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/relative_broker_socket (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/missing_workload_api_socket (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/no_endpoint_authorization (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/ambiguous_endpoint_authorization (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/non_positive_timeout (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/unparseable_agent_id (0.00s)
+    --- PASS: TestNewClientRejectsAnInvalidConfig/unparseable_trust_domain (0.00s)
+PASS
+ok  	github.com/componere/incusos-spire/internal/broker	0.846s
+=== RUN   TestPackedReferenceUsesFrozenTypeURL
+=== PAUSE TestPackedReferenceUsesFrozenTypeURL
+=== RUN   TestAttestReferenceReturnsUnprefixedSelectorValues
+=== PAUSE TestAttestReferenceReturnsUnprefixedSelectorValues
+=== RUN   TestAttestReferenceLogsDetailThroughSPIRELoggerAtDebugLevel
+=== PAUSE TestAttestReferenceLogsDetailThroughSPIRELoggerAtDebugLevel
+=== RUN   TestAttestReferenceRejectsForeignTypeURL
+=== PAUSE TestAttestReferenceRejectsForeignTypeURL
+=== RUN   TestAttestReferenceRejectsMissingReference
+=== PAUSE TestAttestReferenceRejectsMissingReference
+=== RUN   TestAttestReferenceRejectsUndecodableReference
+=== PAUSE TestAttestReferenceRejectsUndecodableReference
+=== RUN   TestAttestReferenceRequiresConfiguration
+=== PAUSE TestAttestReferenceRequiresConfiguration
+=== RUN   TestAttestReferenceMapsCoreSentinels
+=== PAUSE TestAttestReferenceMapsCoreSentinels
+=== RUN   TestAttestReferenceHidesBackendDetailBehindFixedMessage
+=== PAUSE TestAttestReferenceHidesBackendDetailBehindFixedMessage
+=== RUN   TestAttestFailureHidesPolicyDetail
+=== PAUSE TestAttestFailureHidesPolicyDetail
+=== RUN   TestAttestFailureMapsUnknownErrorToInternal
+=== PAUSE TestAttestFailureMapsUnknownErrorToInternal
+=== RUN   TestReaderConfigRejectsIncompleteConfig
+=== PAUSE TestReaderConfigRejectsIncompleteConfig
+=== RUN   TestReaderConfigConvertsEveryValue
+=== PAUSE TestReaderConfigConvertsEveryValue
+=== RUN   TestConfigureBuildsCoreFromPluginData
+=== PAUSE TestConfigureBuildsCoreFromPluginData
+=== RUN   TestConfigureRejectsBadPluginData
+=== PAUSE TestConfigureRejectsBadPluginData
+=== RUN   TestValidateReportsUsability
+=== PAUSE TestValidateReportsUsability
+=== RUN   TestServedPluginAnswersOverGoPluginTransport
+--- PASS: TestServedPluginAnswersOverGoPluginTransport (0.01s)
+=== CONT  TestPackedReferenceUsesFrozenTypeURL
+=== CONT  TestAttestReferenceHidesBackendDetailBehindFixedMessage
+--- PASS: TestPackedReferenceUsesFrozenTypeURL (0.00s)
+=== CONT  TestAttestReferenceMapsCoreSentinels
+=== CONT  TestAttestReferenceRejectsMissingReference
+=== CONT  TestValidateReportsUsability
+=== RUN   TestAttestReferenceMapsCoreSentinels/endpoint_mismatch
+=== PAUSE TestAttestReferenceMapsCoreSentinels/endpoint_mismatch
+=== CONT  TestConfigureRejectsBadPluginData
+=== RUN   TestAttestReferenceMapsCoreSentinels/unusable_record_status
+=== CONT  TestConfigureBuildsCoreFromPluginData
+=== CONT  TestAttestReferenceRequiresConfiguration
+=== CONT  TestAttestFailureHidesPolicyDetail
+=== CONT  TestAttestFailureMapsUnknownErrorToInternal
+=== CONT  TestAttestReferenceLogsDetailThroughSPIRELoggerAtDebugLevel
+=== CONT  TestAttestReferenceRejectsForeignTypeURL
+=== PAUSE TestAttestReferenceMapsCoreSentinels/unusable_record_status
+=== RUN   TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_fails_permanently
+=== PAUSE TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_fails_permanently
+=== RUN   TestAttestReferenceHidesBackendDetailBehindFixedMessage/endpoint_identity_read_is_unavailable
+=== PAUSE TestAttestReferenceHidesBackendDetailBehindFixedMessage/endpoint_identity_read_is_unavailable
+=== RUN   TestAttestReferenceMapsCoreSentinels/unusable_record_project
+=== RUN   TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unavailable
+=== PAUSE TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unavailable
+=== PAUSE TestAttestReferenceMapsCoreSentinels/unusable_record_project
+=== RUN   TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unauthorized
+=== RUN   TestAttestReferenceMapsCoreSentinels/backend_unavailable
+=== PAUSE TestAttestReferenceMapsCoreSentinels/backend_unavailable
+=== CONT  TestReaderConfigConvertsEveryValue
+=== RUN   TestAttestReferenceMapsCoreSentinels/invalid_reference
+=== PAUSE TestAttestReferenceMapsCoreSentinels/invalid_reference
+=== RUN   TestAttestReferenceMapsCoreSentinels/instance_not_found
+=== PAUSE TestAttestReferenceMapsCoreSentinels/instance_not_found
+=== RUN   TestAttestReferenceMapsCoreSentinels/ambiguous_reference
+=== CONT  TestAttestReferenceRejectsUndecodableReference
+=== CONT  TestReaderConfigRejectsIncompleteConfig
+=== RUN   TestReaderConfigRejectsIncompleteConfig/unparsable_timeout
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/unparsable_timeout
+=== CONT  TestAttestReferenceReturnsUnprefixedSelectorValues
+=== RUN   TestReaderConfigRejectsIncompleteConfig/non_positive_timeout
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/non_positive_timeout
+=== RUN   TestReaderConfigRejectsIncompleteConfig/missing_server_url
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/missing_server_url
+=== RUN   TestReaderConfigRejectsIncompleteConfig/missing_project
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/missing_project
+=== RUN   TestReaderConfigRejectsIncompleteConfig/missing_timeout
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/missing_timeout
+=== RUN   TestConfigureRejectsBadPluginData/empty_block
+=== PAUSE TestConfigureRejectsBadPluginData/empty_block
+--- PASS: TestAttestReferenceRejectsMissingReference (0.00s)
+--- PASS: TestAttestReferenceRequiresConfiguration (0.00s)
+--- PASS: TestAttestFailureHidesPolicyDetail (0.00s)
+=== PAUSE TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unauthorized
+=== CONT  TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_fails_permanently
+=== CONT  TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unauthorized
+=== CONT  TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unavailable
+=== PAUSE TestAttestReferenceMapsCoreSentinels/ambiguous_reference
+=== RUN   TestAttestReferenceMapsCoreSentinels/generation_mismatch
+=== RUN   TestReaderConfigRejectsIncompleteConfig/missing_server_pin
+=== PAUSE TestAttestReferenceMapsCoreSentinels/generation_mismatch
+=== CONT  TestAttestReferenceMapsCoreSentinels/endpoint_mismatch
+=== CONT  TestAttestReferenceMapsCoreSentinels/ambiguous_reference
+=== CONT  TestAttestReferenceHidesBackendDetailBehindFixedMessage/endpoint_identity_read_is_unavailable
+=== CONT  TestAttestReferenceMapsCoreSentinels/unusable_record_project
+=== CONT  TestAttestReferenceMapsCoreSentinels/unusable_record_status
+=== CONT  TestAttestReferenceMapsCoreSentinels/backend_unavailable
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/missing_server_pin
+=== CONT  TestAttestReferenceMapsCoreSentinels/instance_not_found
+=== RUN   TestReaderConfigRejectsIncompleteConfig/missing_client_cert
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/missing_client_cert
+=== RUN   TestReaderConfigRejectsIncompleteConfig/missing_client_key
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/missing_client_key
+=== RUN   TestReaderConfigRejectsIncompleteConfig/both_server_pins
+=== PAUSE TestReaderConfigRejectsIncompleteConfig/both_server_pins
+--- PASS: TestAttestFailureMapsUnknownErrorToInternal (0.00s)
+--- PASS: TestReaderConfigConvertsEveryValue (0.00s)
+=== RUN   TestConfigureRejectsBadPluginData/unusable_value
+=== CONT  TestAttestReferenceMapsCoreSentinels/invalid_reference
+=== CONT  TestAttestReferenceMapsCoreSentinels/generation_mismatch
+=== CONT  TestReaderConfigRejectsIncompleteConfig/unparsable_timeout
+=== CONT  TestReaderConfigRejectsIncompleteConfig/both_server_pins
+=== CONT  TestReaderConfigRejectsIncompleteConfig/missing_client_key
+=== CONT  TestReaderConfigRejectsIncompleteConfig/missing_client_cert
+=== CONT  TestReaderConfigRejectsIncompleteConfig/missing_server_pin
+=== CONT  TestReaderConfigRejectsIncompleteConfig/missing_timeout
+=== PAUSE TestConfigureRejectsBadPluginData/unusable_value
+=== CONT  TestReaderConfigRejectsIncompleteConfig/missing_server_url
+=== CONT  TestReaderConfigRejectsIncompleteConfig/non_positive_timeout
+=== RUN   TestConfigureRejectsBadPluginData/malformed_hcl
+=== CONT  TestReaderConfigRejectsIncompleteConfig/missing_project
+--- PASS: TestAttestReferenceRejectsForeignTypeURL (0.00s)
+--- PASS: TestAttestReferenceRejectsUndecodableReference (0.00s)
+--- PASS: TestAttestReferenceLogsDetailThroughSPIRELoggerAtDebugLevel (0.00s)
+=== PAUSE TestConfigureRejectsBadPluginData/malformed_hcl
+=== CONT  TestConfigureRejectsBadPluginData/empty_block
+--- PASS: TestAttestReferenceReturnsUnprefixedSelectorValues (0.00s)
+=== CONT  TestConfigureRejectsBadPluginData/unusable_value
+--- PASS: TestAttestReferenceHidesBackendDetailBehindFixedMessage (0.00s)
+    --- PASS: TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unauthorized (0.00s)
+    --- PASS: TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_is_unavailable (0.00s)
+    --- PASS: TestAttestReferenceHidesBackendDetailBehindFixedMessage/endpoint_identity_read_is_unavailable (0.00s)
+    --- PASS: TestAttestReferenceHidesBackendDetailBehindFixedMessage/instance_lookup_fails_permanently (0.00s)
+--- PASS: TestReaderConfigRejectsIncompleteConfig (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/unparsable_timeout (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/both_server_pins (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/missing_client_key (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/missing_client_cert (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/missing_server_pin (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/missing_timeout (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/missing_server_url (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/non_positive_timeout (0.00s)
+    --- PASS: TestReaderConfigRejectsIncompleteConfig/missing_project (0.00s)
+=== CONT  TestConfigureRejectsBadPluginData/malformed_hcl
+--- PASS: TestConfigureRejectsBadPluginData (0.00s)
+    --- PASS: TestConfigureRejectsBadPluginData/empty_block (0.00s)
+    --- PASS: TestConfigureRejectsBadPluginData/malformed_hcl (0.00s)
+    --- PASS: TestConfigureRejectsBadPluginData/unusable_value (0.00s)
+--- PASS: TestAttestReferenceMapsCoreSentinels (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/ambiguous_reference (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/endpoint_mismatch (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/backend_unavailable (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/unusable_record_status (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/unusable_record_project (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/invalid_reference (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/generation_mismatch (0.00s)
+    --- PASS: TestAttestReferenceMapsCoreSentinels/instance_not_found (0.00s)
+--- PASS: TestValidateReportsUsability (0.00s)
+--- PASS: TestConfigureBuildsCoreFromPluginData (0.00s)
+PASS
+ok  	github.com/componere/incusos-spire/cmd/incus-attestor	1.054s
+
+$ golangci-lint run ./...
+0 issues.

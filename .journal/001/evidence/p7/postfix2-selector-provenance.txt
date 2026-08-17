@@ -1,0 +1,75 @@
+# Derivation provenance for the `uuid` and `project` selectors.
+# The audit noted that on a successful request those two values are byte-for-byte present in
+# the request, so nothing so far distinguished "read from the returned Incus record" from
+# "echoed after a successful backend call". These four experiments close that gap.
+
+## 1. `project` OMITTED from the request — the selector is still incus:project:spike-spiffe
+# Request (no `project` field at all):
+#   {"instanceUuid":"6d1c5ee3-5b2f-4ead-8e54-db985302fbdb"}
+{
+  "svids": [
+    {
+      "spiffeId": "spiffe://spike.incus.internal/incus/instance/6d1c5ee3-5b2f-4ead-8e54-db985302fbdb",
+      "x509Svid": "MIICSzCCAfCgAwIBAgIQOrDeQXEXkSYJHwVpEFxr1jAKBggqhkjOPQQDAjBQMQswCQYDVQQGEwJVUzEPMA0GA1UEChMGU1BJRkZF...<TRUNCATED-DER>",
+      "x509SvidKey": "<REDACTED-PRIVATE-KEY>",
+      "bundle": "MIICCzCCAbCgAwIBAgIQYcJz6tzp1gTA5Ma0yxYH/TAKBggqhkjOPQQDAjBQMQswCQYDVQQGEwJVUzEPMA0GA1UEChMGU1BJRkZF...<TRUNCATED-DER>"
+    }
+  ]
+}
+ERROR:
+  Code: DeadlineExceeded
+  Message: stream terminated by RST_STREAM with error code: CANCEL
+
+# Agent side (request line shows project= empty; selector list still carries the project):
+[37mDEBU[0m[0910] attesting incus instance reference            [37mexternal[0m=true [37minstance_uuid[0m=6d1c5ee3-5b2f-4ead-8e54-db985302fbdb [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37mproject[0m= [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:38:38.876Z" [37munverified_server_claim[0m=
+[37mDEBU[0m[0910] Reference attested to have selectors          [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37mselectors[0m="[type:\"incus\" value:\"uuid:6d1c5ee3-5b2f-4ead-8e54-db985302fbdb\" type:\"incus\" value:\"generation:6d1c5ee3-5b2f-4ead-8e54-db985302fbdb\" type:\"incus\" value:\"project:spike-spiffe\" type:\"incus\" value:\"type:container\" type:\"incus\" value:\"name:spike-authz-probe\" type:\"incus\" value:\"image:f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16\"]" [37msubsystem_name[0m=workload_attestor
+# The issued SPIFFE ID matched a registration entry whose selectors are
+# incus:uuid:6d1c5ee3-… + incus:project:spike-spiffe, so the project selector was both
+# produced and matched while absent from the request. It came from the plugin's configured
+# default project applied to the record lookup, not from caller input.
+
+## 2. A FORGED `project` never becomes a selector
+# Request: {"instanceUuid":"6d1c5ee3-5b2f-4ead-8e54-db985302fbdb","project":"default"}
+{}
+ERROR:
+  Code: DeadlineExceeded
+  Message: context deadline exceeded
+[37mDEBU[0m[0986] attesting incus instance reference            [37mexternal[0m=true [37minstance_uuid[0m=6d1c5ee3-5b2f-4ead-8e54-db985302fbdb [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37mproject[0m=default [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:39:55.185Z" [37munverified_server_claim[0m=
+[37mDEBU[0m[0986] incus attestation failed                      [37merror[0m="attestor: instance not found" [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:39:55.187Z"
+[37mDEBU[0m[0986] Reference attested to have selectors          [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37mselectors[0m="[]" [37msubsystem_name[0m=workload_attestor
+
+## 3. `uuid` cannot be laundered through case — non-canonical input is refused at the door
+# Request: {"instanceUuid":"6D1C5EE3-5B2F-4EAD-8E54-DB985302FBDB","project":"spike-spiffe"}
+ERROR:
+  Code: InvalidArgument
+  Message: workload attestor "incus" failed: rpc error: code = InvalidArgument desc = workloadattestor(incus): invalid incus instance reference
+[37mDEBU[0m[0930] incus attestation failed                      [37merror[0m="attestor: instance uuid \"6D1C5EE3-5B2F-4EAD-8E54-DB985302FBDB\" is empty or not canonical: attestor: invalid instance reference" [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T02:38:58.902Z"
+# Consequence, recorded honestly: the `uuid` selector's value cannot be shown to differ from
+# the request value, because any request value that differs from the record's canonical form
+# is rejected before the lookup. Its provenance rests on the surrounding behaviour instead:
+# an ambiguous UUID is counted across returned records (postfix2-agent-log-ambiguous-uuid.txt),
+# a record with no volatile.uuid never matches (postfix2-agent-log-empty-uuid.txt), and every
+# other selector in the same set is record-sourced (below).
+
+## 4. `incus:name` follows the RECORD across a rename, with the request held constant
+# Throwaway p7-dup-a given volatile.uuid=7f3a9c21-4d6e-4b18-9a02-5c7e18d4b310.
+# Identical request both times: {"instanceUuid":"7f3a9c21-4d6e-4b18-9a02-5c7e18d4b310"}
+
+### 4a. before rename
+[37mDEBU[0m[0944] Reference attested to have selectors          [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37mselectors[0m="[type:\"incus\" value:\"uuid:7f3a9c21-4d6e-4b18-9a02-5c7e18d4b310\" type:\"incus\" value:\"generation:cd31486d-86b5-4322-91e4-7af3638ace1f\" type:\"incus\" value:\"project:spike-spiffe\" type:\"incus\" value:\"type:container\" type:\"incus\" value:\"name:p7-dup-a\" type:\"incus\" value:\"image:f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16\"]" [37msubsystem_name[0m=workload_attestor
+
+### 4b. after `incus stop` + `incus rename p7-dup-a p7-renamed` + `incus start`
+[37mDEBU[0m[0969] Reference attested to have selectors          [37mreference_type[0m=type.googleapis.com/componere.incus.v1alpha1.IncusInstanceReference [37mselectors[0m="[type:\"incus\" value:\"uuid:7f3a9c21-4d6e-4b18-9a02-5c7e18d4b310\" type:\"incus\" value:\"generation:cd31486d-86b5-4322-91e4-7af3638ace1f\" type:\"incus\" value:\"project:spike-spiffe\" type:\"incus\" value:\"type:container\" type:\"incus\" value:\"name:p7-renamed\" type:\"incus\" value:\"image:f005c3b83cc4ffe5b0e0a0c3fccdee6decbae5559fafce9861d9c8b3d2720a16\"]" [37msubsystem_name[0m=workload_attestor
+
+# incus:name changed from p7-dup-a to p7-renamed with the request byte-identical.
+# Both runs also emit generation:cd31486d-86b5-4322-91e4-7af3638ace1f, a value that is
+# NOT in the request and that differs from the requested uuid — the generation survived the
+# volatile.uuid rewrite, so the selector demonstrably comes from the stored record.
+# Both runs returned {} because no registration entry exists for that SPIFFE ID; the
+# selectors are still logged, which is what this experiment needed.
+
+## Selectors with no corresponding request field at all
+#   incus:generation, incus:type, incus:name, incus:image   (4 of 6)
+# Selectors with a corresponding request field:
+#   incus:uuid      <- instance_uuid (required identity anchor, canonical-form-checked)
+#   incus:project   <- project (OPTIONAL; proven above to be emitted when the field is absent)

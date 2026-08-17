@@ -1,0 +1,48 @@
+P7 durable-package and production-import transcript
+Target commit: edab2fe
+Code worktree: /Users/josh/code/componere/incusos-spire/.wt/feat-incus-attestor
+
+OBSERVED: each command below exited with status 0. Output is copied verbatim.
+
+$ find internal/attestor internal/incus/identity internal/broker cmd/incus-attestor proto/componere/incus/v1alpha1 -type f -print
+internal/attestor/mocks/doc.go
+internal/attestor/mocks/mock_InstanceReader.go
+internal/attestor/derive_test.go
+internal/attestor/derive.go
+internal/attestor/doc.go
+internal/attestor/attestor.go
+internal/incus/identity/doc.go
+internal/incus/identity/reader.go
+internal/incus/identity/reader_test.go
+internal/broker/client.go
+internal/broker/doc.go
+internal/broker/client_test.go
+cmd/incus-attestor/plugin_test.go
+cmd/incus-attestor/plugin.go
+cmd/incus-attestor/doc.go
+cmd/incus-attestor/main.go
+proto/componere/incus/v1alpha1/reference.pb.go
+proto/componere/incus/v1alpha1/reference.proto
+
+$ go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./internal/attestor
+github.com/componere/incusos-spire/internal/attestor
+
+$ go list -f '{{.ImportPath}}: {{join .Imports " "}}' ./internal/attestor
+github.com/componere/incusos-spire/internal/attestor: context errors fmt strings
+
+$ go list -f '{{.ImportPath}}: {{join .Imports " "}}' ./...
+github.com/componere/incusos-spire/cmd/incus-attestor: context errors github.com/componere/incusos-spire/internal/attestor github.com/componere/incusos-spire/internal/incus/identity github.com/componere/incusos-spire/proto/componere/incus/v1alpha1 github.com/hashicorp/go-hclog github.com/hashicorp/hcl github.com/spiffe/spire-plugin-sdk/pluginmain github.com/spiffe/spire-plugin-sdk/pluginsdk github.com/spiffe/spire-plugin-sdk/proto/spire/plugin/agent/workloadattestor/v1 github.com/spiffe/spire-plugin-sdk/proto/spire/service/common/config/v1 google.golang.org/grpc/codes google.golang.org/grpc/status slices strings sync time
+github.com/componere/incusos-spire/cmd/template-go: context fmt github.com/componere/incusos-spire/internal/cli os os/signal syscall
+github.com/componere/incusos-spire/internal/attestor: context errors fmt strings
+github.com/componere/incusos-spire/internal/attestor/mocks: context github.com/componere/incusos-spire/internal/attestor github.com/stretchr/testify/mock
+github.com/componere/incusos-spire/internal/broker: context errors fmt github.com/spiffe/go-spiffe/v2/exp/proto/spiffe/broker github.com/spiffe/go-spiffe/v2/spiffeid github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig github.com/spiffe/go-spiffe/v2/workloadapi google.golang.org/grpc google.golang.org/grpc/codes google.golang.org/grpc/credentials google.golang.org/grpc/metadata google.golang.org/grpc/status google.golang.org/protobuf/types/known/anypb io path/filepath strings time
+github.com/componere/incusos-spire/internal/cli: fmt github.com/componere/incusos-spire/internal/config github.com/componere/incusos-spire/internal/templateinfo github.com/spf13/cobra github.com/spf13/viper io strings
+github.com/componere/incusos-spire/internal/config: github.com/componere/incusos-spire/internal/templateinfo github.com/spf13/viper strings
+github.com/componere/incusos-spire/internal/incus/identity: context crypto/sha256 crypto/tls crypto/x509 encoding/hex encoding/json encoding/pem errors fmt github.com/componere/incusos-spire/internal/attestor io net net/http net/url os strings syscall time
+github.com/componere/incusos-spire/internal/templateinfo: 
+github.com/componere/incusos-spire/proto/componere/incus/v1alpha1: google.golang.org/protobuf/reflect/protoreflect google.golang.org/protobuf/runtime/protoimpl reflect sync unsafe
+
+OBSERVED interpretation:
+- internal/attestor has no non-standard-library dependency and its exact production imports are context, errors, fmt, and strings. It imports no filesystem, network, clock, gRPC, SPIRE, or Incus package.
+- The experimental github.com/spiffe/go-spiffe/v2/exp/proto/spiffe/broker import appears on exactly one package line: internal/broker.
+- cmd/incus-attestor imports the pure core and the Incus identity adapter; it does not import the experimental Broker proto.

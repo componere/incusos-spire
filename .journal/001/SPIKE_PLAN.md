@@ -1,6 +1,6 @@
 # SPIKE_PLAN — End-to-End SPIRE Integration on OVH IncusOS Bare Metal
 
-**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial) · P6 (schema frozen) · **P7 / H6 PROVEN** · **P8 / H7 PROVEN** · **P9 / H8 PROVEN 2026-08-17** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md), [`p8`](evidence/p8/EVIDENCE.md) + [`guest brief`](evidence/p8/GUEST_SOCK_BRIEF.md) + [`security`](evidence/p8/SECURITY_FINDINGS.md), [`p9`](evidence/p9/EVIDENCE.md) + [`x509pop`](evidence/p9/X509POP_BRIEF.md) + [`security`](evidence/p9/SECURITY_FINDINGS.md)
+**Session:** 001 · **Status:** G0 · P1 · P2 · **P3 / G3 PASSED** · P4 · P5 (partial) · P6 (schema frozen) · **P7 / H6 PROVEN** · **P8 / H7 PROVEN** · **P9 / H8 PROVEN 2026-08-17** · **P10 COMPLETE / ACCEPTED 2026-08-17** · **Date:** 2026-08-15 · **Evidence:** [`p0`](evidence/p0/EVIDENCE.md), [`p1`](evidence/p1/EVIDENCE.md), [`p2`](evidence/p2/EVIDENCE.md), [`p3`](evidence/p3/EVIDENCE.md), [`p4`](evidence/p4/EVIDENCE.md), [`p5`](evidence/p5/EVIDENCE.md), [`p6`](evidence/p6/EVIDENCE.md) + [`schema`](evidence/p6/REFERENCE_SCHEMA.md), [`p7`](evidence/p7/p7-broker.md) + [`brief`](evidence/p7/BROKER_BRIEF.md) + [`fallback`](evidence/p7/FALLBACK_CONTRACT.md), [`p8`](evidence/p8/EVIDENCE.md) + [`guest brief`](evidence/p8/GUEST_SOCK_BRIEF.md) + [`security`](evidence/p8/SECURITY_FINDINGS.md), [`p9`](evidence/p9/EVIDENCE.md) + [`x509pop`](evidence/p9/X509POP_BRIEF.md) + [`security`](evidence/p9/SECURITY_FINDINGS.md), [`p10`](evidence/p10/p10-matrix.md)
 **Target host:** `ovh-incusos` → `ns1001912.ip-147-135-105.us` (`https://147.135.105.83:8443`)
 **Pinned versions:** IncusOS `202608102114`, Incus `7.3`, SPIRE `1.15.2` (server, agent, plugin SDK — pin by image digest once resolved)
 
@@ -267,7 +267,7 @@ Legend: every phase records evidence under `.journal/001/evidence/pN-*/` (journa
 - **Expected evidence:** `p10-matrix.md` — one section per case; plus updated `p6` observation table where new lifecycle data emerged.
 - **Acceptance:** Cases 1–4, 6–7, and 9–10 pass. Migration case 8 is documented as deferred with proxy results. For case 5, B cannot obtain A's identity using B's own material or a claimed UUID; the deliberately stolen unused-token subcase produces the documented bearer-token finding.
 - **Failure interpretation:** Impersonation with the attacker's own instance material or replay of a consumed/expired credential is a blocking failure. Successful use of a deliberately stolen, still-unused bearer nonce confirms the explicit token-theft risk and requires either additional binding or documented risk acceptance. Lifecycle rough edges such as manual re-bootstrap after restore are findings, not blockers, when they fail closed.
-- **Rollback/cleanup:** All clones/snapshots deleted per case; both guests deleted at the end of P10.
+- **Rollback/cleanup:** All case-local clones, snapshots, temporary entries, and credential material are deleted in P10. The live guests and their chain infrastructure pass to P11, which executes the ordered Teardown Inventory in Appendix E.
 - **Decision gate:** Matrix results feed §9 go/no-go directly.
 
 ### P11 — Teardown and architecture go/no-go
@@ -298,17 +298,18 @@ graph LR
 **GO requires all of:**
 1. G3 passed on the physical TPM (H1–H3), including endorsement-chain validation (`endorsement_ca_path`) — no degraded/`x509pop` host fallback in effect.
 2. H6 proven on pinned v1.15.2 with all four Broker failure-isolation behaviors observed.
-3. P10 cases 4, 7, 9, and 10 fail closed. Case 5 proves that B cannot obtain A's identity with B's own bootstrap material or a claimed UUID. Any risk from theft of A's still-unused bearer nonce is either mitigated with an additional binding or explicitly accepted with the nonce's entropy, short TTL, single-use semantics, and isolation documented.
-4. Least-privilege result (P5) with residual over-grant judged acceptable and recorded.
-5. Post-teardown TPM inventory identical to baseline; IncusOS trusted unlock intact throughout (zero recovery-key events).
+3. P10 cases 4, 6, 7, 9, and 10 satisfy their fail-closed or isolation expectations. Case 6 specifically proves that `incus copy` re-keys both `volatile.uuid` and `volatile.uuid.generation`; this criterion does not extend that result to export/import. Case 5 proves that B cannot obtain A's identity with B's own bootstrap material or a claimed UUID. Any risk from theft of A's still-unused bearer nonce is either mitigated with caller binding or explicitly accepted with the nonce's entropy, short TTL, single-use semantics, and isolation documented.
+4. Import-safe anchor uniqueness is proven. Each supported operation that can create a second instance, including import, either re-keys the UUID and generation or rejects duplicate anchors; alternatively, an authoritative global uniqueness mechanism and lifecycle reconciliation for copies, restores, moves, imports, and deletion are proven.
+5. Least-privilege result (P5) with residual over-grant judged acceptable and recorded.
+6. Post-teardown TPM inventory identical to baseline; IncusOS trusted unlock intact throughout (zero recovery-key events).
 
-**Conditional items allowed in a GO:** migration (#8) deferred pending a cluster; exchange-credential delivery hardening (P9 §2) listed as pre-production work; Broker API re-validation required on every SPIRE upgrade.
+**Conditional items allowed in a GO:** real cluster-member migration (#8) deferred pending a cluster; exchange-credential delivery hardening (P9 §2) listed as pre-production work; Broker API re-validation required on every SPIRE upgrade. The completed project-move and export/import proxies are decision evidence, not deferred migration work.
 
-**NO-GO triggers:** endorsement chain unobtainable (H1 false) with vendor retrieval exhausted; Broker API cannot route vendor reference types (H6 false) and the Delegated Identity fallback's weaker trust split is deemed unacceptable; cross-instance impersonation without possession of the target instance's unredeemed secret; unacceptable exposure of that bearer secret; any TPM-safety incident.
+**NO-GO triggers:** endorsement chain unobtainable (H1 false) with vendor retrieval exhausted; Broker API cannot route vendor reference types (H6 false) and the Delegated Identity fallback's weaker trust split is deemed unacceptable; cross-instance impersonation without possession of the target instance's unredeemed secret; unacceptable exposure of that bearer secret; any supported lifecycle operation that permits concurrent duplicate identity anchors without re-keying or rejecting the duplicate, unless authoritative global uniqueness and reconciliation are proven; any TPM-safety incident.
 
 ## 10. Architecture-Contradiction Protocol
 
-The standing decision (Incus-level integration, no forks) is preserved unless a phase produces a direct contradiction. If so: record the exact contradiction (phase, hypothesis, observed evidence), stop dependent phases, and evaluate the pre-identified safest alternative — (a) H1 false → host `x509pop` with hardware residency deferred; (b) H6 false → Delegated Identity API adapter; (c) H7 false → alternative guest side channel (cloud-init/vsock). Any alternative adoption is a go/no-go input, never a silent substitution.
+The standing decision (Incus-level integration, no forks) is preserved unless a phase produces a direct contradiction. If so: record the exact contradiction (phase, hypothesis, observed evidence), stop dependent phases, and evaluate the pre-identified safest alternative — (a) H1 false → host `x509pop` with hardware residency deferred; (b) H6 false → Delegated Identity API adapter; (c) H7 false → alternative guest side channel (cloud-init/vsock); (d) a supported lifecycle operation replays or duplicates authoritative identity anchors → re-key or reject that operation, or replace the anchor model only after authoritative global uniqueness and reconciliation are proven. Any alternative adoption is a go/no-go input, never a silent substitution.
 
 ---
 
@@ -323,9 +324,11 @@ The standing decision (Incus-level integration, no forks) is preserved unless a 
 | R5 | DA lockout triggered by repeated failed TPM auth | Low | High | Lockout counters recorded in P0; no retry loops; stop condition |
 | R6 | Incus least privilege coarser than desired | Medium | Medium | Separate read-only attestor and bootstrap-writer identities; P5 records each smallest achievable grant; dedicated-project confinement is the floor |
 | R7 | Exchange-credential delivery to guest exposes key material | Medium | Medium | P9 documents delivery/holding tradeoffs explicitly; pre-production hardening item |
-| R8 | Single-node host cannot test migration | Certain | Low (spike) | Declared limitation; proxies in P10 #8; conditional go |
+| R8 | Real cluster-member migration remains untested on the single-node host | Certain | Low (spike) | Conditional only for real member-to-member migration: prove UUID/generation behavior and authoritative global single-match lookup across members. The completed project-move and export/import proxies are not deferred under R8 |
 | R9 | Secret leakage into evidence/journal | Low | High | Appendix D rules; redaction checklist before every evidence commit |
-| R10 | Theft of an unused bootstrap nonce allows guest impersonation because the nonce is a bearer credential | Low | High | Per-instance `/dev/incus/sock` isolation, high entropy, short TTL, single use, log redaction; test whether an additional caller-binding mechanism is required |
+| R10 | Theft of an unused bootstrap nonce allows guest impersonation because the nonce is a bearer credential | Low | High | Per-instance `/dev/incus/sock` isolation, high entropy, short TTL, single use, and log redaction constrain exposure but do not bind the caller. Caller binding is required to eliminate portability and is currently unimplemented; otherwise P11 must explicitly accept the residual risk |
+| R11 | Supported export/import replays `volatile.uuid` and `volatile.uuid.generation`, permitting concurrent duplicate authoritative anchors | Certain (observed path) | High | Re-key both anchors on import or reject duplicate-anchor import; alternatively, enforce authoritative global uniqueness with lifecycle reconciliation. `created_at` is also replayed and cannot break the tie |
+| R12 | Configured bootstrap trust can become stale after CA rotation; deleting persisted agent state then fails closed and drops dependent identity services until bootstrap trust is refreshed | Certain (observed path) | Medium | P11 decision input: require rotation-aware atomic distribution of overlapping current and next authorities plus a mandatory pre-delete bundle validation gate. Recovery must source the authoritative bundle from `spire-server bundle show` over the authenticated Incus administrative channel. No bypass or impersonation was observed |
 
 ## Appendix B — Evidence Matrix (17 required coverage areas → phases)
 
@@ -413,13 +416,13 @@ Recorded objects (append at creation time):
 | 3 | `/spike/bin/incus-attestor` (sha256 `155143a1…4fca4`), `/spike/bin/grpcurl`, `/spike/broker-run/`, protoset and plugin credential dirs on `spike-spire-agent-state` | P7 | Removed with the volume |
 | 3 | `spire-agent` P7 config `/spike/conf/agent.conf` (broker + `incus` attestor); pre-P7 config preserved at `/spike/conf/agent.conf.p3.bak` | P7 | **Left live**; restore the `.p3.bak` file to revert |
 | — | Durable code on branch `feat/incus-attestor` (`c266bc5`, `30a34ac`, `edab2fe`) | P7 | Product code, not teardown; merge via PR |
-| 1 | Guest VMs `spike-guest-a`, `spike-guest-b` in `spike-spiffe` | P8 | **Persist into P9/P10**; delete in P11 |
+| 1 | Guest VMs `spike-guest-a`, `spike-guest-b` in `spike-spiffe` | P8 | **Persisted through P10; delete in P11** under the ordered Teardown Inventory |
 | 4 | `spike-broker` container + volume `spike-broker-state` (holds the operator mint token and broker TLS key) | P8 | **Left running** for P9; delete with the volume |
 | 3 | `user.spiffe-bootstrap` on any instance | P8 | Verified clear on both guests; the reaper now withdraws expired keys automatically |
 | — | Durable code `691c51c`, `5a9bee7`, `ade77d8` on `feat/incus-attestor` | P8 | Product code, not teardown |
-| 2 | Attested guest node `x509pop/incus/a955ca30-…` in `spike-guest-a` | P9 | **Left attested** for P10; `spire-server agent evict` (never `ban`, which blocks re-attestation) |
-| 2 | Registration entry `spire-exchange/incus/a955ca30-…`, parented to the TPM host node | P9 | **Left live** for P10; delete with the guest node |
-| 3 | Guest agent state in `spike-guest-a` (`spire-agent` 1.15.2 binary, data dir, `agent.conf`) | P9 | Persists into P10; guest is deleted whole in P11 |
+| 2 | Attested guest node `x509pop/incus/a955ca30-…` in `spike-guest-a` | P9 | **Left attested through P10**; evict in P11 before deleting the guest |
+| 2 | Registration entry `spire-exchange/incus/a955ca30-…`, parented to the TPM host node | P9 | **Left live through P10**; delete in P11 with the guest-node slice |
+| 3 | Guest agent state in `spike-guest-a` (`spire-agent` 1.15.2 binary, data dir, `agent.conf`) | P9 | Removed with `spike-guest-a` during P11 |
 | — | Test workload entries `/guest/demo` and `/guest/demo-app` (`unix:uid:0`, `unix:uid:989`) | P9 | Deleted in-phase; `Found 2 entries` verified |
 | — | Broker binary redeployed at sha256 `4ed87f92…fa45` (was `bd46b32d…4728`) | P9 | Supersedes the P8 deployment; same container and volume |
 | — | Durable code `609885e`, `3f5b7f6` on `feat/incus-attestor` | P9 | Product code, not teardown |

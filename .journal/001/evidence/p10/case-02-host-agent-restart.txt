@@ -1,0 +1,444 @@
+### P10 wave 3 — preflight (G-1 … G-11)
+2026-08-17T18:47:50Z
+
+$ incus exec ovh-incusos:spire-server -- /opt/spire/bin/spire-server agent list
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:38:08 +0000 UTC
+Serial number     : 338245892702369297504124352385913862932
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 19:30:01 +0000 UTC
+Serial number     : 43821240236870179814166160036431104854
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+### G-2/G-3 registration entries
+$ incus exec ovh-incusos:spire-server -- /opt/spire/bin/spire-server entry show
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+### G-4 user.spiffe-bootstrap on every instance in both projects
+default/spike-broker: 1
+default/spike-p3-stage: 1
+default/spike-probe: 1
+default/spire-agent: 1
+default/spire-server: 1
+spike-spiffe/spike-authz-probe: 1
+spike-spiffe/spike-guest-a: 1
+spike-spiffe/spike-guest-b: 1
+
+### G-5 snapshots on both guests
+-- spike-guest-a
+-- spike-guest-b
+(empty output above = no snapshots)
+
+### G-5b instance list, all projects (clone residue check)
+Error: Can't specify column L when not clustered
+$ incus list ovh-incusos: --all-projects --format csv -c nst
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+
+### G-6 guest A agent + health
+953 spire-agent run -config /run/spike-p9/agent.conf
+953
+total 24
+drwx------  2 root root  100 Aug 17 18:29 .
+drwxr-xr-x 20 root root  460 Aug 17 18:30 ..
+-rw-r--r--  1 root root 8672 Aug 17 18:29 agent.conf
+-rw-------  1 root root    4 Aug 17 18:29 agent.pid
+-rw-------  1 root root 5583 Aug 17 18:30 spire-agent.log
+no systemd spire unit
+Agent is healthy.
+
+### G-7 broker service, digest, listener, hostagent device + sockets
+active
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess                                   
+LISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*    users:(("systemd-resolve",pid=153,fd=18))
+LISTEN 0      4096         0.0.0.0:5355      0.0.0.0:*    users:(("systemd-resolve",pid=153,fd=12))
+LISTEN 0      4096      127.0.0.54:53        0.0.0.0:*    users:(("systemd-resolve",pid=153,fd=20))
+LISTEN 0      4096            [::]:5355         [::]:*    users:(("systemd-resolve",pid=153,fd=14))
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=1238,fd=6))
+-- hostagent device
+hostagent:
+  path: /hostagent
+  pool: local
+  source: spike-spire-agent-state
+  type: disk
+state:
+  path: /state
+  pool: local
+  source: spike-broker-state
+  type: disk
+-- sockets
+srwxrwx--- 1 root root 0 Aug 17 02:23 /hostagent/broker-run/broker.sock
+srw-rw-rw- 1 root root 0 Aug 17 15:33 /hostagent/wlapi-relay.sock
+
+### G-8/G-11 relay process inside spire-agent + its exact argv
+$ incus exec ovh-incusos:spire-agent -- ps -eo pid,ppid,args
+Error: Command not found
+-- /proc scan fallback
+Error: Command not found
+-- relay socket
+Error: Command not found
+-- /spike volume contents seen from spike-broker (/hostagent)
+/hostagent:
+total 117
+drwx--x--x 11 root   root      18 Aug 17 15:33 .
+drwxr-xr-x 19 root   root      23 Aug 17 15:28 ..
+drwxr-xr-x  2 root   root       4 Aug 17 18:38 agent-data
+drwxr-xr-x  2    501 dialout    5 Aug 17 15:33 bin
+drwxr-xr-x  2    501 root       4 Aug 17 02:23 broker-run
+drwxr-xr-x  2    501 root       6 Aug 17 01:52 broker-svid
+drwxr-xr-x  2 root   root       5 Aug 17 01:50 conf
+-rw-------  1 root   root     940 Aug 16 21:46 devid.csr
+-rw-r--r--  1 root   root    2831 Aug 16 21:46 devid.pem
+-rw-------  1 root   root     190 Aug 16 21:46 devid.priv.blob
+-rw-------  1 root   root     280 Aug 16 21:46 devid.pub.blob
+-rw-r--r--  1    501 root    2954 Aug 17 01:52 incus-broker.protoset
+drwxr-xr-x  2    501 dialout    5 Aug 17 01:50 incus-creds
+drwxr-xr-x  8 root   root       8 Aug 16 22:42 negatives
+drwxr-xr-x  2    501 root       9 Aug 17 01:54 rogue-svid
+drwxr-xr-x  2 root   root       3 Aug 17 02:23 run
+srw-rw-rw-  1 nobody nogroup    0 Aug 17 15:31 wlapi-proxy.sock
+srw-rw-rw-  1 root   root       0 Aug 17 15:33 wlapi-relay.sock
+
+/hostagent/bin:
+total 25799
+drwxr-xr-x  2  501 dialout        5 Aug 17 15:33 .
+drwx--x--x 11 root root          18 Aug 17 15:33 ..
+-rwxr-xr-x  1  501 root    24567808 Aug 17 01:50 grpcurl
+-rwxr-xr-x  1  501 dialout 19838443 Aug 17 02:17 incus-attestor
+-rwxr-xr-x  1  501 dialout  2429090 Aug 17 15:33 p9-wlapi-relay
+
+/hostagent/run:
+total 18
+drwxr-xr-x  2 root root  3 Aug 17 02:23 .
+drwx--x--x 11 root root 18 Aug 17 15:33 ..
+srwxrwxrwx  1 root root  0 Aug 17 02:23 api.sock
+-- is the relay actually serving? probe the relay socket from the broker container
+sh: 1: python3: not found
+Error: Command not found
+
+### G-9 host safety invariant — five non-secret fields ONLY
+$ incus query ovh-incusos:/os/1.0/system/security  (filtered: recovery-key fields never extracted)
+$ incus query ovh-incusos:/os/1.0/system/security | jq -c "<five non-secret fields only; recovery-key fields never selected>"
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+
+### G-10 boot posture (read-only)
+$ incus exec ovh-incusos:spike-broker -- systemctl is-enabled incus-spiffe-broker.service
+enabled
+$ boot.autostart per instance
+default/spike-broker boot.autostart=
+default/spike-p3-stage boot.autostart=
+default/spike-probe boot.autostart=
+default/spire-agent boot.autostart=
+default/spire-server boot.autostart=
+spike-spiffe/spike-authz-probe boot.autostart=
+spike-spiffe/spike-guest-a boot.autostart=
+spike-spiffe/spike-guest-b boot.autostart=
+
+### host uptime / boot time
+{"server_version":"7.3","kernel_version":"7.1.8-zabbly+","os_name":"IncusOS","os_version":"202608102114"}
+
+### G-11 relay: is a backgrounded incus exec session still holding it?
+$ incus operation list ovh-incusos:
++--------------------------------------+-----------+-------------------+---------+------------+----------------------+
+|                  ID                  |   TYPE    |    DESCRIPTION    |  STATE  | CANCELABLE |       CREATED        |
++--------------------------------------+-----------+-------------------+---------+------------+----------------------+
+| 045f2baa-4517-43de-a350-6c0564dbe659 | WEBSOCKET | Executing command | SUCCESS | NO         | 2026/08/17 11:50 PDT |
++--------------------------------------+-----------+-------------------+---------+------------+----------------------+
+$ volatile.last_state.power (boot.autostart unset ⇒ Incus restores last power state)
+default/spike-broker volatile.last_state.power=RUNNING
+default/spike-p3-stage volatile.last_state.power=RUNNING
+default/spike-probe volatile.last_state.power=RUNNING
+default/spire-agent volatile.last_state.power=RUNNING
+default/spire-server volatile.last_state.power=RUNNING
+spike-spiffe/spike-authz-probe volatile.last_state.power=RUNNING
+spike-spiffe/spike-guest-a volatile.last_state.power=RUNNING
+spike-spiffe/spike-guest-b volatile.last_state.power=RUNNING
+
+### guest B harness present?
+total 124
+drwxr-xr-x 2  501 dialout  4096 Aug 17 15:43 .
+drwx------ 4 root root     4096 Aug 17 15:43 ..
+-rwx------ 1  501 dialout  8696 Aug 17 16:41 agent.conf.template
+-rw------- 1  501 root     1923 Aug 17 15:43 broker-ca.pem
+-rwx------ 1  501 dialout 63117 Aug 17 16:41 guest-agent-bootstrap.sh
+-rwx------ 1  501 dialout 33768 Aug 17 16:41 guest-workload-check.sh
+### Case 2 — host SPIRE agent container restart
+### step 1: pre-restart anchors
+2026-08-17T18:50:43Z
+
+$ incus exec ovh-incusos:spire-server -- /opt/spire/bin/spire-server agent list
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:38:08 +0000 UTC
+Serial number     : 338245892702369297504124352385913862932
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 19:30:01 +0000 UTC
+Serial number     : 43821240236870179814166160036431104854
+Can re-attest     : true
+Agent version     : 1.15.2
+
+$ guest A health
+Agent is healthy.
+953 spire-agent run -config /run/spike-p9/agent.conf
+$ broker listener + digest
+active
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=1238,fd=6))
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+$ relay socket inode (seen from spike-broker via the shared volume)
+/hostagent/wlapi-relay.sock inode=160 mtime=2026-08-17 15:33:50.897722799 +0000 type=socket
+/hostagent/run/api.sock inode=527 mtime=2026-08-17 02:23:28.319253466 +0000 type=socket
+/hostagent/broker-run/broker.sock inode=152 mtime=2026-08-17 02:23:28.319253466 +0000 type=socket
+
+### step 2: BASELINE probe of the full broker path BEFORE the restart (guest B, no exchange entry ⇒ expected 503 burn)
+2026-08-17T18:50:56Z
+$ incus exec ovh-incusos:spike-broker -- env BROKER_URL=https://10.55.156.44:8443 BROKER_CACERT=/state/tls/spike-root-ca.pem MINT_AUTH_TOKEN_FILE=/state/auth/mint-token /root/p8/operator-mint.sh a4fec3ea-d4aa-4e6c-94c6-8295cee62338 spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=fa4b3f1bbcadfa687740a7997bee4c31
+  expires_at=2026-08-17T19:00:57.085839465Z
+  instance_name=spike-guest-b
+  generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+  instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=fa4b3f1bbcadfa687740a7997bee4c31 expires_at=2026-08-17T19:00:57.085839465Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe
+$ incus exec ovh-incusos:spike-guest-b --project spike-spiffe -- env SPIRE_SERVER_ADDRESS=10.55.156.67 SPIRE_SERVER_PORT=8081 TRUST_DOMAIN=spike.incus.internal BROKER_CACERT=/root/p9/broker-ca.pem /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=fa4b3f1bbcadfa687740a7997bee4c31
+payload: sha256=c5bdea901c527dc1686fd18fd195bc5ffd868d589ba2660512aff1f7571f6248
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=fa4b3f1bbcadfa687740a7997bee4c31
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 503
+verdict: ERROR 503 — a broker dependency is unavailable: the nonce store, the Incus API,
+         or the host agent's Broker API endpoint that mints the exchange SVID. Retryable.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=503 nonce_id=fa4b3f1bbcadfa687740a7997bee4c31 broker_reason=nonce_consumed_without_svid
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+BOOTSTRAP_EXIT=13
+$ incus exec ovh-incusos:spike-broker -- journalctl -u incus-spiffe-broker --since "18:50" --no-pager | grep fa4b3f1bbcadfa687740a7997bee4c31
+Aug 17 18:50:57 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:50:57.100649375Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"fa4b3f1bbcadfa687740a7997bee4c31","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","generation":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","expires_at":"2026-08-17T19:00:57.085839465Z"}
+Aug 17 18:51:03 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:51:03.16393312Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"fa4b3f1bbcadfa687740a7997bee4c31","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","project":"spike-spiffe"}
+Aug 17 18:51:03 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:51:03.172077002Z","level":"ERROR","msg":"nonce consumed but no exchange SVID was issued","operation":"redeem","outcome":"burned","nonce_id":"fa4b3f1bbcadfa687740a7997bee4c31","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","failure_class":"broker_no_svid","peer_address":"10.55.156.75:45980","http_status":503,"code":"nonce_consumed_without_svid","reason":"broker delivered no X.509-SVID: response carried an empty SVID list"}
+$ guest B bootstrap key after the burn (bytes)
+1
+
+--- host agent log, baseline probe: the Broker API request reached the attestor (pre-restart) ---
+$ incus console ovh-incusos:spire-agent --show-log | grep -E "attest(ing|ed) incus instance reference|Reference attested" | tail -3
+
+--- host agent log, BASELINE probe (pre-restart): the Broker API request reached the incus attestor ---
+$ incus console ovh-incusos:spire-agent --show-log   (captured 2026-08-17T18:51Z, before the restart)
+DEBU[59254] attesting incus instance reference            external=true instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 plugin_name=incus plugin_type=WorkloadAttestor project=spike-spiffe subsystem_name=incus.incus-attestor timestamp="2026-08-17T18:51:03.166Z" unverified_server_claim=
+DEBU[59254] attested incus instance reference             external=true plugin_name=incus plugin_type=WorkloadAttestor selector_count=6 subsystem_name=incus.incus-attestor timestamp="2026-08-17T18:51:03.171Z"
+DEBU[59254] Subscribing to cache changes                  broker_peer="spiffe://spike.incus.internal/incus-broker" method=SubscribeToX509SVID selectors="[type:\"incus\" value:\"uuid:a4fec3ea-...\" ... ]" service=spiffe.broker.API
+(That is the healthy full-path signature the post-restart probe must reproduce.)
+
+### step 3: restart ONLY the spire-agent container
+2026-08-17T18:51:26Z  $ incus restart ovh-incusos:spire-agent   → rc=0, container RUNNING at 18:51:29Z (Started 2026/08/17 11:51 PDT, PID 61077)
+
+### step 4: post-restart host agent log — persisted SVID or fresh TPM attestation?
+2026-08-17T18:52:04Z
+$ incus console ovh-incusos:spire-agent --show-log | head -40
+[33mWARN[0m[0000] Experimental features have been enabled. Please see doc/upgrading.md for upgrade and compatibility considerations for experimental features. 
+[33mWARN[0m[0000] Current umask 0022 is too permissive; setting umask 0027 
+[36mINFO[0m[0000] Starting agent                                [36mdata_dir[0m=/spike/agent-data [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=disk [36mplugin_type[0m=KeyManager [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=unix [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] starting plugin                               [37margs[0m="[/spike/bin/incus-attestor]" [37mexternal[0m=true [37mpath[0m=/spike/bin/incus-attestor [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] plugin started                                [37mexternal[0m=true [37mpath[0m=/spike/bin/incus-attestor [37mpid[0m=39 [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] waiting for RPC address                       [37mexternal[0m=true [37mplugin[0m=/spike/bin/incus-attestor [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog
+[37mDEBU[0m[0000] plugin address                                [37maddress[0m=/tmp/plugin1914457157 [37mexternal[0m=true [37mnetwork[0m=unix [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T18:51:30.134Z"
+[37mDEBU[0m[0000] using plugin                                  [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=catalog [37mversion[0m=1
+[37mDEBU[0m[0000] incus workload attestor configured            [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T18:51:30.138Z"
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=true [36mplugin_name[0m=incus [36mplugin_type[0m=WorkloadAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=true [36mplugin_name[0m=incus [36mplugin_type[0m=WorkloadAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0000] SVID loaded                                   [36mspiffe_id[0m="spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0" [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0000] Success after 2562047h47m16.854775807s attempts=0  [36mLogger[0m=TrustBundleSources
+[36mINFO[0m[0000] Setting use.                                  [36mLogger[0m=TrustBundleSources
+[37mDEBU[0m[0000] Bundle updated                                [37msubsystem_name[0m=cache_manager [37mtrust_domain_id[0m=spike.incus.internal
+[37mDEBU[0m[0000] Entry created                                 [37mentry[0m=718f0f2e-1430-4ea8-9179-ae7223724f6b [37mselectors_added[0m=1 [37mspiffe_id[0m="spiffe://spike.incus.internal/incus-broker" [37msubsystem_name[0m=cache_manager
+[37mDEBU[0m[0000] Entry created                                 [37mentry[0m=6261b897-9852-4740-a80f-2dbd05979597 [37mselectors_added[0m=1 [37mspiffe_id[0m="spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a" [37msubsystem_name[0m=cache_manager
+[37mDEBU[0m[0000] Renewing stale entries                        [37mcache_type[0m=workload [37mcount[0m=2 [37mlimit[0m=500 [37msubsystem_name[0m=manager
+[36mINFO[0m[0000] Creating X509-SVID                            [36mentry_id[0m=6261b897-9852-4740-a80f-2dbd05979597 [36mspiffe_id[0m="spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a" [36msubsystem_name[0m=manager
+[36mINFO[0m[0000] Creating X509-SVID                            [36mentry_id[0m=718f0f2e-1430-4ea8-9179-ae7223724f6b [36mspiffe_id[0m="spiffe://spike.incus.internal/incus-broker" [36msubsystem_name[0m=manager
+[37mDEBU[0m[0000] SVID updated                                  [37mentry[0m=6261b897-9852-4740-a80f-2dbd05979597 [37mspiffe_id[0m="spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a" [37msubsystem_name[0m=cache_manager
+[37mDEBU[0m[0000] SVID updated                                  [37mentry[0m=718f0f2e-1430-4ea8-9179-ae7223724f6b [37mspiffe_id[0m="spiffe://spike.incus.internal/incus-broker" [37msubsystem_name[0m=cache_manager
+[37mDEBU[0m[0000] Bundle added                                  [37msubsystem_name[0m=svid_store_cache [37mtrust_domain_id[0m=spike.incus.internal
+[36mINFO[0m[0000] Starting Workload and SDS APIs                [36maddress[0m=/spike/run/api.sock [36mnetwork[0m=unix [36msubsystem_name[0m=endpoints
+[36mINFO[0m[0000] Starting SPIFFE Broker Endpoint               [36maddress[0m=/spike/broker-run/broker.sock [36mnetwork[0m=unix
+[37mDEBU[0m[0000] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0000] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+[31mERRO[0m[0000] workload attestor "incus" failed              [31merror[0m="rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31mpid[0m=23 [31msubsystem_name[0m=workload_attestor
+[31mERRO[0m[0000] Failed to collect all selectors               [31merror[0m="workload attestor \"incus\" failed: rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31msubsystem_name[0m=workload_attestor
+
+
+### step 5: relay state after the restart (C2-4)
+2026-08-17T18:52:32Z
+$ incus exec ovh-incusos:spike-broker -- curl -sS --max-time 5 --unix-socket /hostagent/wlapi-relay.sock http://localhost/
+curl: (7) Failed to connect to localhost port 80 after 0 ms: Could not connect to server
+curl_rc=7   ← the relay process died with the restarted container's PID namespace
+$ incus exec ovh-incusos:spike-broker -- stat -c "%n inode=%i mtime=%y type=%F" /hostagent/wlapi-relay.sock
+/hostagent/wlapi-relay.sock inode=160 mtime=2026-08-17 15:33:50.897722799 +0000 type=socket
+The socket FILE survived on the shared volume (same inode 160, mtime 15:33:50) — it is stale, not live.
+
+### step 6: relay restored with the exact P9 argv (G-11 answer: the binary self-daemonizes inside the container,
+###          so the P9 command as recorded IS the backgrounding form; the operator-side exec returns rc=0 and the relay lives on)
+2026-08-17T18:53:13Z
+$ incus exec ovh-incusos:spire-agent -- /spike/bin/p9-wlapi-relay /spike/wlapi-relay.sock /spike/run/api.sock   → exec returned 0
+/hostagent/wlapi-relay.sock inode=422 mtime=2026-08-17 18:52:39.286146608 +0000
+curl: (1) Received HTTP/0.9 when not allowed
+curl_rc=1
+inode 160 → 422: the relay unlinked the stale socket and re-bound; no manual removal was needed.
+curl (1) "Received HTTP/0.9 when not allowed" = the connection SUCCEEDED and the peer spoke non-HTTP (gRPC). Contrast with the pre-restore curl (7) refusal.
+
+### step 7: POST-RESTART probe — broker NOT restarted, one fresh guest-B nonce
+2026-08-17T18:53:21Z
+mint: HTTP 201
+RESULT mint outcome=minted status=201 nonce_id=4817655c230e15d303ff3b4bd73efec6 expires_at=2026-08-17T19:03:22.548112916Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe
+
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=4817655c230e15d303ff3b4bd73efec6
+payload: sha256=c4e62072d85a99bfe54033484b8c6e27bfcaa124bbce79df04457150de6482d9
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=4817655c230e15d303ff3b4bd73efec6
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 503
+verdict: ERROR 503 — a broker dependency is unavailable: the nonce store, the Incus API,
+         or the host agent's Broker API endpoint that mints the exchange SVID. Retryable.
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=503 nonce_id=4817655c230e15d303ff3b4bd73efec6 broker_reason=nonce_consumed_without_svid
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+BOOTSTRAP_EXIT=13
+
+--- broker journal for the post-restart probe (verbatim) ---
+Aug 17 18:53:22 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:53:22.563396429Z","level":"INFO","msg":"bootstrap nonce minted","operation":"mint","nonce_id":"4817655c230e15d303ff3b4bd73efec6","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","generation":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","expires_at":"2026-08-17T19:03:22.548112916Z"}
+Aug 17 18:53:23 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:53:23.492117472Z","level":"INFO","msg":"bootstrap key cleared","operation":"redeem","nonce_id":"4817655c230e15d303ff3b4bd73efec6","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","instance_name":"spike-guest-b","project":"spike-spiffe"}
+Aug 17 18:53:23 spike-broker incus-spiffe-broker[1238]: {"time":"2026-08-17T18:53:23.503263013Z","level":"ERROR","msg":"nonce consumed but no exchange SVID was issued","operation":"redeem","outcome":"burned","nonce_id":"4817655c230e15d303ff3b4bd73efec6","instance_uuid":"a4fec3ea-d4aa-4e6c-94c6-8295cee62338","project":"spike-spiffe","failure_class":"broker_no_svid","peer_address":"10.55.156.75:33788","http_status":503,"code":"nonce_consumed_without_svid","reason":"broker delivered no X.509-SVID: response carried an empty SVID list"}
+
+--- host agent log: the Broker API call reached the incus attestor AFTER the restart ---
+[37mDEBU[0m[0113] attesting incus instance reference            [37mexternal[0m=true [37minstance_uuid[0m=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37mproject[0m=spike-spiffe [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T18:53:23.496Z" [37munverified_server_claim[0m=
+[37mDEBU[0m[0113] attested incus instance reference             [37mexternal[0m=true [37mplugin_name[0m=incus [37mplugin_type[0m=WorkloadAttestor [37mselector_count[0m=6 [37msubsystem_name[0m=incus.incus-attestor [37mtimestamp[0m="2026-08-17T18:53:23.502Z"
+[37mDEBU[0m[0113] Subscribing to cache changes                  [37mbroker_peer[0m="spiffe://spike.incus.internal/incus-broker" [37mmethod[0m=SubscribeToX509SVID [37mselectors[0m="[type:\"incus\" value:\"uuid:a4fec3ea-d4aa-4e6c-94c6-8295cee62338\" type:\"incus\" value:\"generation:a4fec3ea-d4aa-4e6c-94c6-8295cee62338\" type:\"incus\" value:\"project:spike-spiffe\" type:\"incus\" value:\"type:virtual-machine\" type:\"incus\" value:\"name:spike-guest-b\" type:\"incus\" value:\"image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7\"]" [37mservice[0m=spiffe.broker.API
+
+--- broker service was NOT restarted: same pid as before the host-agent restart ---
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=1238,fd=6))
+
+### step 8: C2-6 — is the burned nonce genuinely spent? one more B nonce, payload staged over stdin BEFORE redeeming
+2026-08-17T18:53:49Z
+RESULT mint outcome=minted status=201 nonce_id=674225fbecda5f0265e44b7c3b261993 expires_at=2026-08-17T19:03:49.986587931Z instance_name=spike-guest-b generation_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 instance_uuid=a4fec3ea-d4aa-4e6c-94c6-8295cee62338 project=spike-spiffe
+$ incus config get spike-guest-b user.spiffe-bootstrap | incus exec spike-guest-b -- sh -c "umask 077; cat > /run/p10c2-b.json"   (value never in argv, never printed)
+-rw------- 1 root root 268 Aug 17 18:53 /run/p10c2-b.json
+staged nonce_id: 674225fbecda5f0265e44b7c3b261993
+--- redeem #1 (from the guest socket): expect 503 burn ---
+redeem: HTTP 503
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=503 nonce_id=674225fbecda5f0265e44b7c3b261993 broker_reason=nonce_consumed_without_svid
+--- replay the SAME staged value: expect the ordinary 409 conflict ---
+redeem: HTTP 409
+RESULT phase=p9-bootstrap outcome=ERROR reason=redeem_rejected status=409 nonce_id=674225fbecda5f0265e44b7c3b261993 broker_reason=conflict
+--- shred the staged copy ---
+ls: cannot access '/run/p10c2-b.json': No such file or directory
+--- B bootstrap key (bytes) ---
+1
+
+### step 9: C2-2 node continuity + C2-3 guest A unaffected
+2026-08-17T18:54:12Z
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:38:08 +0000 UTC
+Serial number     : 338245892702369297504124352385913862932
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 19:30:01 +0000 UTC
+Serial number     : 43821240236870179814166160036431104854
+Can re-attest     : true
+Agent version     : 1.15.2
+
+$ guest A
+953 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+$ host agent log: was there ANY node attestation after the restart?
+0
+$ host security invariant re-read after case 2
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+
+### step 10: health-endpoint behavior, recorded accurately
+$ broker: it exposes NO /live or /ready — probing them returns 404 from its TLS listener
+GET /live -> 404
+GET /ready -> 404
+$ host SPIRE agent: /live and /ready are ITS endpoints (log line "Serving health checks address=0.0.0.0:8080")
+$ host SPIRE agent health endpoints (its container IP is 10.55.156.104 AFTER the restart; the log line is "Serving health checks address=0.0.0.0:8080")
+agent /live -> 200
+agent /ready -> 200
+$ container addresses now
+spike-broker,10.55.156.44 (eth0)
+spire-agent,10.55.156.104 (eth0)
+spire-server,10.55.156.67 (eth0)
+NOTE: the restart moved the spire-agent container IP. Nothing in the chain depends on it — the broker reaches the agent over the shared-volume UNIX sockets, not over the network.

@@ -1,0 +1,609 @@
+### Case 1 — CORRECTIVE RERUN: forced fresh tpm_devid attestation after host reboot
+### (additive; the original 19:00–19:05Z reboot is preserved as the cached-SVID control)
+### step 1: preflight
+2026-08-17T19:24:54Z
+--- host security (five fields) ---
+Error: cannot use null as iterable (array or object)
+--- nodes ---
+Error: Command not found
+--- entries ---
+Error: Command not found
+### Case 1 — CORRECTIVE RERUN: forcing fresh tpm_devid attestation after a host reboot
+### Additive. The original 19:00-19:05Z reboot is preserved unchanged as the cached-SVID control.
+### NO TPM COMMAND is executed anywhere in this rerun.
+
+### step 1: preflight
+2026-08-17T19:25:23Z
+--- host security: exactly five non-secret fields (recovery-key fields never selected) ---
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+--- attested nodes ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 20:07:07 +0000 UTC
+Serial number     : 320634660006268655429054830322439136727
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 20:04:21 +0000 UTC
+Serial number     : 255755278229189093346956051979456409234
+Can re-attest     : true
+Agent version     : 1.15.2
+
+--- registration entries ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- broker ---
+active
+enabled
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=173,fd=6)) 
+--- relay + sockets ---
+/hostagent/broker-run/broker.sock inode=384
+/hostagent/wlapi-relay.sock inode=134
+/hostagent/run/api.sock inode=513
+--- instances ---
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+--- guests ---
+790 spire-agent run -config /run/spike-p9/agent.conf
+/tmp/spire-agent/public/api.sock
+--- bootstrap keys (bytes; 1 = clear) ---
+default/spike-broker: 1
+default/spike-p3-stage: 1
+default/spike-probe: 1
+default/spire-agent: 1
+default/spire-server: 1
+spike-spiffe/spike-authz-probe: 1
+spike-spiffe/spike-guest-a: 1
+spike-spiffe/spike-guest-b: 1
+
+### step 2: host node anchor + agent data-dir inventory (names/modes/sizes/checksums only, NO file contents)
+2026-08-17T19:25:58Z
+$ incus exec ovh-incusos:spike-broker -- ls -la /hostagent/agent-data/   (the host agent data_dir /spike/agent-data, same volume spike-spire-agent-state)
+total 26
+drwxr-xr-x  2 root root    4 Aug 17 19:07 .
+drwx--x--x 11 root root   18 Aug 17 19:03 ..
+-rw-------  1 root root 3358 Aug 17 19:07 agent-data.json
+-rw-------  1 root root  428 Aug 17 19:06 keys.json
+$ sha256sum of the two agent state files (P3 finding 5: agent-data.json = SVID/bundle state, keys.json = disk KeyManager private key)
+66979055c503c4b63a67f8c6a84b11232163b3451245f778d29608e168915c51  /hostagent/agent-data/agent-data.json
+37b715fc81aa2c0abf5912b6199b6a3bf15e62c6ea5550c347b74bea48a741c2  /hostagent/agent-data/keys.json
+$ untouched-by-design files: trust bundle, agent config, DevID triplet (checksums only)
+609c0bc7a4abb9914ee5a82a4337a45a878eafb147c175a33bc2bf7ec9a2ee94  /hostagent/conf/agent-trust-bundle.pem
+58a5ca5019150ac72c507d85265534a30eb555d35e817286c623956775bbb976  /hostagent/conf/agent.conf
+af17cf1d7946467423a1f38e8faf7f14b91718644a9c76b57c287fa8fcfbd7b6  /hostagent/devid.pem
+c95f777b6e7addfaa788b1b16bfeaa78fad034959022b6973a57aa313c256dc5  /hostagent/devid.priv.blob
+948dedb7c59cb545089ff3dfe9f555b780252e13814972dcc2293721aa806512  /hostagent/devid.pub.blob
+
+### step 3: rollback backup of agent-data.json, mode 0600, same encrypted volume, outside the data_dir
+$ install -m 0600 /hostagent/agent-data/agent-data.json /hostagent/p10-c1r-agent-data.json.bak
+/hostagent/p10-c1r-agent-data.json.bak mode=600 owner=0:0 size=3358
+66979055c503c4b63a67f8c6a84b11232163b3451245f778d29608e168915c51  /hostagent/p10-c1r-agent-data.json.bak
+(backup checksum must equal the live agent-data.json checksum above; no content is copied into evidence)
+
+### step 4: boot posture — spire-agent must come back after the reboot, but it must be STOPPED to mutate state
+2026-08-17T19:26:22Z
+$ incus config get ovh-incusos:spire-agent boot.autostart   (original value)
+boot.autostart=[] (empty = UNSET)
+volatile.last_state.power=[RUNNING]
+(case 1 observed that Incus restores volatile.last_state.power; a container left STOPPED across the reboot
+ would therefore stay stopped. boot.autostart is set to true TEMPORARILY for this rerun and restored in step 10.)
+$ incus config set ovh-incusos:spire-agent boot.autostart=true   [TEMPORARY]
+boot.autostart now=[true]
+
+### step 5: stop the agent cleanly, remove ONLY agent-data.json
+2026-08-17T19:26:23Z
+$ incus stop ovh-incusos:spire-agent
+Usage: incus list [<remote>:] [<filter>...]
+                  ┅┅┅┅┅┅┅┅┅┅┅
+
+This client hasn't been configured to use a remote server yet.
+As your platform can't run native Linux instances, you must connect to a remote server.
+
+If you already added a remote server, make it the default with "incus remote switch NAME".
+$ rm /hostagent/agent-data/agent-data.json   (P3: this is the file that forces fresh node attestation)
+$ data_dir after the removal
+total 22
+drwxr-xr-x  2 root root   3 Aug 17 19:26 .
+drwx--x--x 11 root root  19 Aug 17 19:26 ..
+-rw-------  1 root root 428 Aug 17 19:06 keys.json
+$ keys.json checksum — MUST be unchanged (37b715fc…a741c2)
+37b715fc81aa2c0abf5912b6199b6a3bf15e62c6ea5550c347b74bea48a741c2  /hostagent/agent-data/keys.json
+$ nothing else on the volume moved: trust bundle, config and DevID triplet re-checksummed
+609c0bc7a4abb9914ee5a82a4337a45a878eafb147c175a33bc2bf7ec9a2ee94  /hostagent/conf/agent-trust-bundle.pem
+58a5ca5019150ac72c507d85265534a30eb555d35e817286c623956775bbb976  /hostagent/conf/agent.conf
+af17cf1d7946467423a1f38e8faf7f14b91718644a9c76b57c287fa8fcfbd7b6  /hostagent/devid.pem
+c95f777b6e7addfaa788b1b16bfeaa78fad034959022b6973a57aa313c256dc5  /hostagent/devid.priv.blob
+948dedb7c59cb545089ff3dfe9f555b780252e13814972dcc2293721aa806512  /hostagent/devid.pub.blob
+$ (the "incus list ovh-incusos:spire-agent" form above is a client-side usage error, not a host error; corrected form:)
+$ incus list ovh-incusos: spire-agent -f csv -c ns
+spire-agent,STOPPED
+$ pre-reboot host uptime, read from a container that shares the host kernel
+1467.70 1467.70
+
+### step 6: EXACTLY ONE additional host reboot
+2026-08-17T19:26:51Z
+$ incus admin os system reboot ovh-incusos: --force
+WARNING: The IncusOS API and configuration is subject to change
+
+reboot_cmd_rc=0
+2026-08-17T19:26:51Z
+host API answered after 75s at 19:28:06Z
+$ poll for the host API to answer again
+(polled above: host API answered after 75s at 19:28:06Z)
+
+### step 7: FIRST assertion after the host answers — the five-field safety invariant
+2026-08-17T19:28:13Z
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+(the drive_recovery_keys / pool_recovery_keys / config.encryption_recovery_keys fields of this same
+ response were never selected, printed or stored. No tpm2_* command was run.)
+
+### step 8: instance recovery sweep
+2026-08-17T19:28:22Z
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+$ host uptime after the reboot (container /proc/uptime = host kernel uptime; was 1467.70 s before)
+17.94 17.94
+
+### step 9: FIRST agent start after the reboot — it CRASHED. Verbatim, and diagnosed, not smoothed over.
+2026-08-17T19:30:04Z
+$ incus console ovh-incusos:spire-agent --show-log   (captured once; the console ring is destructive to read — P3 finding 1)
+[33mWARN[0m[0000] Experimental features have been enabled. Please see doc/upgrading.md for upgrade and compatibility considerations for experimental features. 
+[33mWARN[0m[0000] Current umask 0022 is too permissive; setting umask 0027 
+[36mINFO[0m[0000] Starting agent                                [36mdata_dir[0m=/spike/agent-data [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0000] No pre-existing agent SVID found. Will perform node attestation  [37msubsystem_name[0m=attestor
+[33mWARN[0m[0000] Keys recovered, but no SVID found. Generating new keypair  [33msubsystem_name[0m=attestor
+[36mINFO[0m[0000] SVID is not found. Starting node attestation  [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0008] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0008] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check has failed. Starting up still.   [33mcheck[0m=agent [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check failed                           [33mcheck[0m=agent [33mdetails[0m="{0x3e7413c8bd18 true false {} {workload api is unavailable}}" [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[36mINFO[0m[0030] Trust Bundle and Server don't agree, bootstrapping again 
+[36mINFO[0m[0035] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0035] No pre-existing agent SVID found. Will perform node attestation  [37msubsystem_name[0m=attestor
+[33mWARN[0m[0035] Keys recovered, but no SVID found. Generating new keypair  [33msubsystem_name[0m=attestor
+[36mINFO[0m[0035] SVID is not found. Starting node attestation  [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0065] Trust Bundle and Server don't agree, bootstrapping again 
+[37mDEBU[0m[0065] Closing catalog                               [37msubsystem_name[0m=catalog
+
+
+$ incus list ovh-incusos: spire-agent -f csv -c ns
+spire-agent,STOPPED
+
+READ THIS PART CAREFULLY — the fresh-attestation branch WAS entered and the crash is NOT a tpm_devid failure:
+  * "No pre-existing agent SVID found. Will perform node attestation" — the removal of agent-data.json worked.
+  * "Keys recovered, but no SVID found. Generating new keypair" — keys.json was retained and read, exactly as intended.
+  * The agent then failed to open the attestation STREAM: the TLS handshake to the SPIRE server failed
+    with x509: certificate signed by unknown authority. No TPM error, no tpm_devid rejection.
+
+$ root cause: the SPIRE server CA rotated mid-spike (P3 predicted this: 1h agent SVID vs 24h CA TTL).
+  The persisted agent-data.json carried the CURRENT bundle; removing it forced the agent back to its
+  bootstrap trust_bundle_path, and that file still held only the OLD authority.
+$ authorities in the SPIRE server bundle right now (public CA material):
+subject=C=US, O=SPIFFE, serialNumber=129944772266556437062337838904092526589
+subject=C=US, O=SPIFFE, serialNumber=336849817190210772708609465223417189934
+$ authorities in the stale on-disk /spike/conf/agent-trust-bundle.pem (sha256 609c0bc7…ee94):
+subject=C=US, O=SPIFFE, serialNumber=129944772266556437062337838904092526589
+(the server now presents a leaf under authority 336849817190210772708609465223417189934, which the
+ bootstrap file does not contain — hence "Trust Bundle and Server don't agree, bootstrapping again")
+
+### step 10: recovery — refresh the bootstrap trust bundle from the authoritative server bundle,
+###          then start the agent. This is the same procedure P3 used to create the file.
+2026-08-17T19:30:22Z
+$ back up the stale bundle first (mode 0600, same volume)
+$ incus exec ovh-incusos:spire-server -- spire-server bundle show  >  /spike/conf/agent-trust-bundle.pem
+Pushing /tmp/p10c1r-server-bundle.pem to /hostagent/conf/agent-trust-bundle.pem: 100% (1.54kB/s)                                                                                                 /hostagent/conf/agent-trust-bundle.pem mode=644 owner=0:0 size=1538
+d5514eec1c9dc5d1f16fafe109a10f9ef28054c93bebf860f2c59ce45c95d520  /hostagent/conf/agent-trust-bundle.pem
+$ authorities now present in the bootstrap bundle:
+subject=C=US, O=SPIFFE, serialNumber=129944772266556437062337838904092526589
+subject=C=US, O=SPIFFE, serialNumber=336849817190210772708609465223417189934
+$ agent-data.json is still ABSENT and keys.json still intact — the fresh-attestation condition is preserved
+total 26
+drwxr-xr-x  2 root root   4 Aug 17 19:28 .
+drwx--x--x 11 root root  20 Aug 17 19:30 ..
+-rw-------  1 root root 146 Aug 17 19:28 agent-data.json
+-rw-------  1 root root 428 Aug 17 19:28 keys.json
+da30ad88cd9b940a73fedb55624fcd0812f623654c72db4cefa4ed715490ea4c  /hostagent/agent-data/keys.json
+$ incus start ovh-incusos:spire-agent
+2026-08-17T19:30:28Z
+
+CORRECTION to the line printed above, recorded rather than silently fixed: by 19:30 the data_dir was
+NOT as this rerun left it at 19:26. The CRASHED agent run itself rewrote both files:
+  agent-data.json — recreated as a 146-byte stub carrying NO SVID (it was 3358 bytes with an SVID before);
+  keys.json       — rewritten, sha256 37b715fc…a741c2 -> da30ad88…90ea4c, because the agent logged
+                    "Keys recovered, but no SVID found. Generating new keypair".
+This rerun did not write either file. The mutation this rerun performed was exactly one rm of
+agent-data.json at 19:26, and the keys.json checksum was verified UNCHANGED at that point (see step 5).
+Everything after that is the SPIRE agent acting on its own during forced re-attestation.
+The fresh-attestation condition still holds: the stub carries no SVID, and the agent logged
+"No pre-existing agent SVID found" against it at [0035].
+
+### step 11: SECOND agent start — FRESH tpm_devid ATTESTATION. This is the gap-closing evidence.
+2026-08-17T19:32:03Z
+$ incus console ovh-incusos:spire-agent --show-log   (verbatim, agent-side)
+[36mINFO[0m[0000] Starting agent                                [36mdata_dir[0m=/spike/agent-data [36mversion[0m=1.15.2
+[36mINFO[0m[0000] Configured plugin                             [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36mreconfigurable[0m=false [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Plugin loaded                                 [36mexternal[0m=false [36mplugin_name[0m=tpm_devid [36mplugin_type[0m=NodeAttestor [36msubsystem_name[0m=catalog
+[36mINFO[0m[0000] Bundle loaded                                 [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0000] No pre-existing agent SVID found. Will perform node attestation  [37msubsystem_name[0m=attestor
+[33mWARN[0m[0000] Keys recovered, but no SVID found. Generating new keypair  [33msubsystem_name[0m=attestor
+[36mINFO[0m[0000] SVID is not found. Starting node attestation  [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[37mDEBU[0m[0008] Initializing health checkers                  [37msubsystem_name[0m=health
+[36mINFO[0m[0008] Serving health checks                         [36maddress[0m="0.0.0.0:8080" [36msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check has failed. Starting up still.   [33mcheck[0m=agent [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[33mWARN[0m[0008] Health check failed                           [33mcheck[0m=agent [33mdetails[0m="{0xc82e4e133d8 true false {} {workload api is unavailable}}" [33merror[0m="subsystem is not ready" [33msubsystem_name[0m=health
+[36mINFO[0m[0033] Node attestation was successful               [36mreattestable[0m=true [36mspiffe_id[0m="spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0" [36msubsystem_name[0m=attestor [36mtrust_domain_id[0m="spiffe://spike.incus.internal"
+[36mINFO[0m[0033] Success after 2m56.406944934s attempts=3      [36mLogger[0m=TrustBundleSources
+[36mINFO[0m[0033] Starting SPIFFE Broker Endpoint               [36maddress[0m=/spike/broker-run/broker.sock [36mnetwork[0m=unix
+[36mINFO[0m[0033] Starting Workload and SDS APIs                [36maddress[0m=/spike/run/api.sock [36mnetwork[0m=unix [36msubsystem_name[0m=endpoints
+[31mERRO[0m[0034] workload attestor "incus" failed              [31merror[0m="rpc error: code = InvalidArgument desc = workloadattestor(incus): unsupported workload reference type \"type.googleapis.com/spiffe.broker.WorkloadPIDReference\"" [31mpid[0m=23 [31msubsystem_name[0m=workload_attestor
+
+Every required line is present, in order, from the agent itself:
+  "No pre-existing agent SVID found. Will perform node attestation"   [0000]
+  "SVID is not found. Starting node attestation"                     [0000]
+  "Node attestation was successful ... reattestable=true"            [0033]
+  spiffe_id=.../spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0  — SAME host node SPIFFE ID
+  elapsed: attestation completed at [0033] — 33 s, matching the ~33.5 s physical-TPM cost P3 measured 3x.
+  (the "Success after 2m56s attempts=3" line is the TrustBundleSources logger counting from the FIRST,
+   crashed start at 19:28; the attestation itself took 33 s of the second start.)
+
+$ server-side node list — same SPIFFE ID, NEW serial, NEW expiry
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 20:31:04 +0000 UTC
+Serial number     : 132093680856743140626168429589948833700
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 20:04:21 +0000 UTC
+Serial number     : 255755278229189093346956051979456409234
+Can re-attest     : true
+Agent version     : 1.15.2
+
+
+### step 12: relay restore + broker (recovery order from case 1 finding C1-F1: relay FIRST)
+2026-08-17T19:32:15Z
+$ broker state before the relay comes back
+active
+<not listening on 8443>
+$ incus exec ovh-incusos:spire-agent -- /spike/bin/p9-wlapi-relay /spike/wlapi-relay.sock /spike/run/api.sock
+relay_exec_rc=0
+/hostagent/wlapi-relay.sock inode=769 mtime=2026-08-17 19:32:17.547743549 +0000
+$ 40 s after the relay returned — did the broker bind, with no restart?
+2026-08-17T19:33:04Z
+active
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=172,fd=6)) 
+Aug 17 19:03:29 spike-broker incus-spiffe-broker[173]: {"time":"2026-08-17T19:03:29.91496386Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","broker_socket":"/hostagent/broker-run/broker.sock","workload_api_socket":"/hostagent/wlapi-relay.sock","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+Aug 17 19:03:29 spike-broker incus-spiffe-broker[173]: {"time":"2026-08-17T19:03:29.915223187Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+Aug 17 19:28:06 spike-broker systemd[1]: Started incus-spiffe-broker.service - incus-spiffe-broker (P8 spike).
+Aug 17 19:33:06 spike-broker incus-spiffe-broker[172]: {"time":"2026-08-17T19:33:06.547261124Z","level":"INFO","msg":"incus-spiffe-broker listening","listen_address":"[::]:8443","redeem_url":"https://10.55.156.44:8443/v1alpha1/redeem","tls_fingerprint":"7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93","incus_url":"https://147.135.105.83:8443","project":"spike-spiffe","broker_socket":"/hostagent/broker-run/broker.sock","workload_api_socket":"/hostagent/wlapi-relay.sock","nonce_ttl":"10m0s","max_nonce_ttl":"10m0s","reap_interval":"1m0s","reap_timeout":"30s","reap_grace":"2m0s","request_timeout":"10s"}
+Aug 17 19:33:06 spike-broker incus-spiffe-broker[172]: {"time":"2026-08-17T19:33:06.547440942Z","level":"INFO","msg":"expired nonce reaper started","operation":"reap","interval":"1m0s","timeout":"30s","grace":"2m0s"}
+/hostagent/broker-run/broker.sock inode=404
+/hostagent/wlapi-relay.sock inode=769
+/hostagent/run/api.sock inode=640
+(broker Main PID 172, Started 19:28:06, bound 19:33:06 — it waited ~5 min, unblocking only once the host
+ agent finished fresh attestation (19:31:0x) AND the relay returned (19:32:17). Same tls_fingerprint
+ 7cedc92f…ab93 as before the reboot; no broker restart. This reproduces and extends finding C1-F1.)
+
+### step 13: guest A after the host reboot
+2026-08-17T19:33:21Z
+{"uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","generation":"37443652-6cce-4135-a88e-e8248e9d2a20","status":"Running"}
+2026-08-17 19:28:05
+<no spire-agent process>
+ls: cannot access '/run/spike-p9': No such file or directory
+ls: cannot access '/run/spike-exchange': No such file or directory
+$ bootstrap keys on both guests (bytes; 1 = clear)
+spike-guest-a: 1
+spike-guest-b: 1
+
+### step 14: guest A recovery — ONE fresh nonce, canonical P9 harness ONCE, no overrides
+2026-08-17T19:33:32Z
+$ incus exec ovh-incusos:spike-broker -- env BROKER_URL=... BROKER_CACERT=... MINT_AUTH_TOKEN_FILE=... /root/p8/operator-mint.sh a955ca30-… spike-spiffe
+mint: sending an operator bearer token (value withheld)
+mint: POST https://10.55.156.44:8443/v1alpha1/nonce
+mint: instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe ttl_seconds=<not sent: broker default>
+mint: HTTP 201
+assert: the mint response carries no nonce, secret, or token field (Appendix D rule 5 upheld)
+minted:
+  nonce_id=e9cd875809bc2f462807786a8fdd1ac2
+  expires_at=2026-08-17T19:43:32.922709283Z
+  instance_name=spike-guest-a
+  generation_uuid=37443652-6cce-4135-a88e-e8248e9d2a20
+  instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  project=spike-spiffe
+  nonce=<never returned by this API; it reaches the guest through user.spiffe-bootstrap>
+RESULT mint outcome=minted status=201 nonce_id=e9cd875809bc2f462807786a8fdd1ac2 expires_at=2026-08-17T19:43:32.922709283Z instance_name=spike-guest-a generation_uuid=37443652-6cce-4135-a88e-e8248e9d2a20 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a project=spike-spiffe
+
+$ incus exec ovh-incusos:spike-guest-a --project spike-spiffe -- env SPIRE_SERVER_ADDRESS=10.55.156.67 SPIRE_SERVER_PORT=8081 TRUST_DOMAIN=spike.incus.internal BROKER_CACERT=/root/p9/broker-ca.pem /root/p9/guest-agent-bootstrap.sh
+exchange: /run/spike-exchange is tmpfs (size=1m, mode 0700, nosuid,nodev,noexec), memory-backed
+socket_read: GET /1.0/config/user.spiffe-bootstrap -> HTTP 200
+payload: nonce_id=e9cd875809bc2f462807786a8fdd1ac2
+payload: sha256=fdd80b27fc45273d73b0088c8d391383577bbb1f2842aad3598db94203956285
+payload: broker_url=https://10.55.156.44:8443/v1alpha1/redeem
+payload: broker_fingerprint=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+payload: nonce=<redacted, present>
+broker: host=10.55.156.44 port=8443
+extraction: primary fields exchange_cert_chain_pem, exchange_key_pem, exchange_bundle_pem (the broker's own names);
+extraction: compatibility spellings are tried only after them
+tls: broker_fingerprint expected=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93 observed=7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+tls: pinned SPKI sha256//VgsjkxXQUOpcDDf3ME0k558xOPa4eQlShWxr+H0l/DA=
+redeem: POST https://10.55.156.44:8443/v1alpha1/redeem nonce_id=e9cd875809bc2f462807786a8fdd1ac2
+redeem: chain validation against BROKER_CACERT=/root/p9/broker-ca.pem plus the SPKI pin
+redeem: HTTP 200
+verdict: GRANTED
+  resolved_instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a
+  resolved_instance_name=spike-guest-a
+  resolved_generation=37443652-6cce-4135-a88e-e8248e9d2a20
+  project=spike-spiffe
+  selectors=incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a,incus:generation:37443652-6cce-4135-a88e-e8248e9d2a20,incus:project:spike-spiffe,incus:type:virtual-machine,incus:name:spike-guest-a,incus:image:9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+exchange: private key parses and matches the certificate (public-key digests equal)
+exchange: certificate_path=/run/spike-exchange/svid.pem chain_certs=1 (leaf first; x509pop accepts leaf+intermediates in one file)
+exchange: private_key_path=/run/spike-exchange/svid.key mode=0600 (tmpfs only, never written to a persistent guest filesystem)
+exchange: trust_bundle_path=/run/spike-exchange/bundle.pem bundle_certs=2
+exchange: spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a (read from the certificate, which is authoritative)
+exchange: serial=BCBDD3380C073271FBA98985E1EB428F not_before=Aug 17 19:32:50 2026 GMT not_after=Aug 17 19:35:00 2026 GMT
+exchange: response exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_expires_at=2026-08-17T19:35:00Z
+exchange: expected_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: trust bundle persisted to /var/lib/spire-agent/bundle.pem (public material, Appendix D rule 3) so the agent can be restarted
+agent: rendered /run/spike-p9/agent.conf from /root/p9/agent.conf.template
+agent: trust_domain=spike.incus.internal server=10.55.156.67:8081 data_dir=/var/lib/spire-agent
+agent: socket_path=/tmp/spire-agent/public/api.sock key_manager=memory trust_bundle_path=/var/lib/spire-agent/bundle.pem
+agent: spire-agent validate -config accepted the rendered configuration
+agent: created /tmp/spire-agent mode=0755 so a non-root workload can traverse to the socket
+agent: created /tmp/spire-agent/public mode=0755 so a non-root workload can traverse to the socket
+agent: started spire-agent run -config /run/spike-p9/agent.conf pid=787 log=/run/spike-p9/spire-agent.log
+agent: node attestation succeeded, node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: healthcheck ready on /tmp/spire-agent/public/api.sock (standard Workload API is serving)
+agent: expected_node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+agent: workload_api=/tmp/spire-agent/public/api.sock socket=srwxrwxrwx root:root dir=drwxr-xr-x root:root
+exchange: files overwritten (shred -z), /run/spike-exchange unmounted, and both verified — the path is empty
+exchange: that is overwrite plus unlink on tmpfs, NOT cryptographic erasure; tmpfs pages can be swapped
+note: the exchange credential is gone and the agent keeps running on the node SVID it
+      obtained. It cannot re-attest: x509pop reloads certificate_path and
+      private_key_path on every attestation, and a restart from here dies with
+      'unable to load keypair: open /run/spike-exchange/svid.pem: no such file or directory'.
+      A restart or reboot therefore needs a FRESH nonce: one bootstrap per boot,
+      chosen rather than discovered. AGENT_KEY_MANAGER=memory.
+RESULT phase=p9-bootstrap outcome=PASS nonce_id=e9cd875809bc2f462807786a8fdd1ac2 instance_uuid=a955ca30-a0dc-4087-a369-37d53d389c5a exchange_spiffe_id=spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a exchange_not_after=Aug 17 19:35:00 2026 GMT node_spiffe_id=spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a key_manager=memory workload_api=/tmp/spire-agent/public/api.sock exchange_retention=shred exchange_material=shredded-and-unmounted
+BOOTSTRAP_EXIT=0
+
+### step 15: prove the in-guest Workload API serves — one TEMPORARY entry, deleted immediately after
+2026-08-17T19:33:44Z
+Entry ID                : d659045f-8cda-4309-86a9-b1dc95ad0c42
+SPIFFE ID               : spiffe://spike.incus.internal/guest/p10-c1r-demo
+Parent ID               : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Revision                : 0
+X509-SVID TTL           : 300
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+$ ≥30 s propagation wait, then fetch from the in-guest Workload API
+2026-08-17T19:34:25Z
+Received 1 svid after 1.634251ms
+
+SPIFFE ID:		spiffe://spike.incus.internal/guest/p10-c1r-demo
+SVID Valid After:	2026-08-17 19:33:39 +0000 UTC
+SVID Valid Until:	2026-08-17 19:38:49 +0000 UTC
+CA #1 Valid After:	2026-08-16 22:03:53 +0000 UTC
+CA #1 Valid Until:	2026-08-17 22:04:03 +0000 UTC
+CA #2 Valid After:	2026-08-17 10:04:01 +0000 UTC
+CA #2 Valid Until:	2026-08-18 10:04:11 +0000 UTC
+
+Writing SVID #0 to file /run/p10c1r-svid/svid.0.pem.
+Writing key #0 to file /run/p10c1r-svid/svid.0.key.
+---
+serial=1FD3B722549E9BEF1F9B9C9C7C3CA29C
+X509v3 Subject Alternative Name: 
+    URI:spiffe://spike.incus.internal/guest/p10-c1r-demo
+(CA #1 and CA #2 in that fetch are the two live authorities — independent corroboration of the
+ mid-spike authority rotation that caused the step-9 crash.)
+
+### step 16: cleanup
+2026-08-17T19:34:39Z
+$ shred the fetched SVID files inside the guest and verify absent
+ls: cannot access '/run/p10c1r-svid': No such file or directory
+$ delete the temporary entry
+Deleted entry with ID: d659045f-8cda-4309-86a9-b1dc95ad0c42
+
+
+Deleted 1 entries successfully$ remove the rollback backup — only now, after attestation succeeded
+ls: cannot access '/hostagent/p10-c1r-*': No such file or directory
+<no p10-c1r-* artifacts remain on the volume>
+$ restore boot.autostart on spire-agent to its original state (UNSET)
+boot.autostart=[] (empty = UNSET, matches the original)
+volatile.last_state.power=[RUNNING]
+
+### step 17: closing verification
+2026-08-17T19:34:56Z
+--- five host safety fields, re-read to close ---
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+--- two nodes ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 20:31:04 +0000 UTC
+Serial number     : 132093680856743140626168429589948833700
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 20:33:34 +0000 UTC
+Serial number     : 307601102364009288208173643239772829818
+Can re-attest     : true
+Agent version     : 1.15.2
+
+--- exactly the two chain entries, no temporary entry ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- broker + relay ---
+active
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=172,fd=6)) 
+--- instances, snapshots, guests ---
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+snapshots on spike-guest-a: 0
+snapshots on spike-guest-b: 0
+--- guest A serving ---
+787 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+--- bootstrap keys clear on every instance (bytes; 1 = clear) ---
+default/spike-broker: 1
+default/spike-p3-stage: 1
+default/spike-probe: 1
+default/spire-agent: 1
+default/spire-server: 1
+spike-spiffe/spike-authz-probe: 1
+spike-spiffe/spike-guest-a: 1
+spike-spiffe/spike-guest-b: 1
+--- host agent data_dir, final ---
+total 26
+drwxr-xr-x  2 root root    4 Aug 17 19:31 .
+drwx--x--x 11 root root   18 Aug 17 19:34 ..
+-rw-------  1 root root 3358 Aug 17 19:31 agent-data.json
+-rw-------  1 root root  428 Aug 17 19:30 keys.json
+e25c80c270a085738f46a67e311fb351b60970710286e47ea0ad2cc5723dc4ea  /hostagent/agent-data/agent-data.json
+2bb0db9d0f103f465388a7e30f417955d9076ad4b498a93c6a0ac25f66d0ae00  /hostagent/agent-data/keys.json
+
+### step 18: summary of this corrective rerun
+2026-08-17T19:35Z
+
+Reboots executed in this rerun: EXACTLY ONE (19:26:51Z). Host API back after 75 s.
+Host uptime 1467.70 s -> 17.94 s, so the reboot is real.
+
+Fresh tpm_devid attestation, directly evidenced:
+  agent log  : "No pre-existing agent SVID found. Will perform node attestation"
+               "SVID is not found. Starting node attestation"
+               "Node attestation was successful  reattestable=true
+                spiffe_id=.../spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0"
+  elapsed    : 33 s from agent start to attestation success (P3 measured 33.32 / 33.46 / 33.48 s)
+  server side: same SPIFFE ID, NEW serial
+
+    host node SVID serial before this rerun : 320634660006268655429054830322439136727 (exp 20:07:07Z)
+    host node SVID serial after  this rerun : 132093680856743140626168429589948833700 (exp 20:31:04Z)
+
+State mutation performed by this rerun: exactly one `rm /spike/agent-data/agent-data.json` at 19:26.
+  keys.json checksum at that moment: 37b715fc…a741c2 — UNCHANGED by this rerun (verified in step 5).
+  keys.json was subsequently rewritten BY THE AGENT ("Keys recovered, but no SVID found. Generating
+  new keypair") during forced attestation, which is the disk KeyManager behaving correctly.
+Configuration change required for recovery, recorded not hidden:
+  /spike/conf/agent-trust-bundle.pem refreshed 609c0bc7…ee94 -> d5514eec…d520 from the authoritative
+  `spire-server bundle show`, because a mid-spike CA rotation had made the bootstrap file stale.
+Temporary settings, both restored: spire-agent boot.autostart true -> UNSET.
+Backups, both removed after success: p10-c1r-agent-data.json.bak, p10-c1r-agent-trust-bundle.pem.stale.bak.
+Temporary entry d659045f-8cda-4309-86a9-b1dc95ad0c42 created and deleted; fetched SVID files shredded.
+One nonce minted (e9cd8758…) and consumed. It is dead.
+
+Five-field safety invariant: green at 19:25:23Z (before), 19:28:13Z (first read after the reboot),
+and 19:34:56Z (close). NO tpm2_* command, no /dev/tpmrm0 access, no TPM object mutation, no DevID
+file touched anywhere in this rerun. The DevID triplet checksums were verified identical before and
+after the state mutation.
+
+$ final re-verification of the untouched-by-design files, after attestation (19:35Z):
+af17cf1d7946467423a1f38e8faf7f14b91718644a9c76b57c287fa8fcfbd7b6  /hostagent/devid.pem
+c95f777b6e7addfaa788b1b16bfeaa78fad034959022b6973a57aa313c256dc5  /hostagent/devid.priv.blob
+948dedb7c59cb545089ff3dfe9f555b780252e13814972dcc2293721aa806512  /hostagent/devid.pub.blob
+58a5ca5019150ac72c507d85265534a30eb555d35e817286c623956775bbb976  /hostagent/conf/agent.conf
+All four identical to the step-2 pre-mutation values. The only file on the volume this rerun wrote
+is agent-trust-bundle.pem (refreshed, step 10); the only file it removed is agent-data.json (step 5).
+
+### step 19: Appendix D rule-4 secret scan over the three files this rerun touched,
+###          with a PLANTED POSITIVE CONTROL so a silent-scanner failure cannot pass as clean.
+2026-08-17T19:36Z
+
+Control file contained, deliberately: a -----BEGIN PRIVATE KEY----- block, a >64-char base64 run,
+a literal "recovery key:" line, and a bare nonce=<64 hex>. Control fired on ALL FOUR patterns.
+
+                                     PRIVATE KEY   base64>64   "recovery"   "nonce="
+  CONTROL.txt (planted)                    2            1           1           1     <- scanner works
+  case-01-host-reboot.md                   1            0          14           0
+  case-01-host-reboot-reattest.txt         0            0           7           2
+  wave-03-final-state.txt                  0            0           5           1
+
+Every hit in the three real files, justified individually:
+
+  case-01-host-reboot.md : "PRIVATE KEY" x1
+      line 152: the literal header string quoted inside a sentence describing a grep pattern
+      ("`grep -rIl` for the three `-----BEGIN … PRIVATE KEY-----` headers"). No PEM block exists in
+      the file; the base64>64 count is 0, which independently confirms that.
+
+  "recovery" x26 across the three files
+      All English prose or field NAMES: "instance recovery sweep", "guest A recovery",
+      "recovery order", "recovery — refresh the bootstrap trust bundle", and the repeated
+      "drive_recovery_keys / pool_recovery_keys / config.encryption_recovery_keys fields were never
+      selected". No recovery-key VALUE appears; those API fields were never selected in any command.
+
+  "nonce=" x3
+      case-01-host-reboot-reattest.txt:351  nonce=<never returned by this API; …>   (harness text)
+      case-01-host-reboot-reattest.txt:361  payload: nonce=<redacted, present>      (harness redaction)
+      wave-03-final-state.txt:121           part of the pre-existing wave-3 scan legend
+      No nonce VALUE anywhere. Nonce IDs only (Appendix D rule 5): e9cd875809bc2f462807786a8fdd1ac2.
+
+  All 16 long hex tokens in this transcript enumerated and attributed: SHA-256 file/binary digests,
+  the broker TLS fingerprint 7cedc92f…, the guest image fingerprint 9eb18b1a…, the DevID leaf SHA-1
+  fee6de97… in the SPIFFE ID, and the harness's one-way sha256 of the bootstrap payload. Digests and
+  fingerprints are explicitly permitted by Appendix D rule 3. Note that c95f777b… and 948dedb7… are
+  the sha256 OF the DevID blob files — one-way digests used to prove the blobs were not modified.
+  The blobs themselves were never read, copied, or printed.
+
+VERDICT: clean. No recovery-key value, TPM key blob, private key, hierarchy password, or nonce value
+appears in any of the three files. Control proves the scan was live.

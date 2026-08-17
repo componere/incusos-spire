@@ -1,0 +1,282 @@
+### P10 wave 3 — final state checklist
+2026-08-17T19:06:57Z
+
+--- 1. host: five non-secret safety fields (recovery-key fields never selected) ---
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+
+--- 2. TPM: no tpm2_* command was executed anywhere in this wave; no persistent handle or NV index created, evicted or written. The IncusOS security API above is the only TPM-adjacent read. ---
+
+--- 3. attested nodes ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 19:38:08 +0000 UTC
+Serial number     : 338245892702369297504124352385913862932
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 20:04:21 +0000 UTC
+Serial number     : 255755278229189093346956051979456409234
+Can re-attest     : true
+Agent version     : 1.15.2
+
+--- 4. registration entries ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+
+--- 5. user.spiffe-bootstrap unset on EVERY instance in both projects (bytes; 1 = unset) ---
+default/spike-broker: 1
+default/spike-p3-stage: 1
+default/spike-probe: 1
+default/spire-agent: 1
+default/spire-server: 1
+spike-spiffe/spike-authz-probe: 1
+spike-spiffe/spike-guest-a: 1
+spike-spiffe/spike-guest-b: 1
+
+--- 6. no snapshots, no clones, both guests RUNNING ---
+snapshots on spike-guest-a: 0
+snapshots on spike-guest-b: 0
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+
+--- 7. guest A: agent, Workload API, exchange state, key hygiene ---
+790 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+srwxrwxrwx 1 root root 0 Aug 17 19:04 /tmp/spire-agent/public/api.sock
+total 0
+drwx------  2 root root  40 Aug 17 19:04 .
+drwxr-xr-x 20 root root 460 Aug 17 19:05 ..
+/run/spike-exchange is not a mountpoint
+/run/incus_agent/agent.key
+(only hit expected: /run/incus_agent/agent.key = Incus own guest-agent TLS key on tmpfs, not SPIRE material)
+
+--- 8. broker: active, digest, listener, hostagent device, both socket paths ---
+active
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=173,fd=6)) 
+/hostagent/broker-run/broker.sock inode=384
+/hostagent/wlapi-relay.sock inode=134
+/hostagent/run/api.sock inode=513
+hostagent:
+  path: /hostagent
+  pool: local
+  source: spike-spire-agent-state
+  type: disk
+state:
+
+--- 9. relay running inside spire-agent, /spike/wlapi-relay.sock present and live ---
+relay_probe_rc=1 (1 = connected, peer speaks gRPC; 7 would be dead)
+curl: (1) Received HTTP/0.9 when not allowed
+(the relay is spike scaffolding on the teardown inventory, not a design)
+
+--- 11. carried forward ---
+{"uuid":"a955ca30-a0dc-4087-a369-37d53d389c5a","generation":"37443652-6cce-4135-a88e-e8248e9d2a20"}
+Every nonce minted during this wave is dead: fa4b3f1bbcadfa687740a7997bee4c31, 4817655c230e15d303ff3b4bd73efec6, 674225fbecda5f0265e44b7c3b261993 (guest B, all burned), 4b6beea07cf603584d0e4fe27c2cc943, 87ae86f3c51a8760c1646e43def904bb (guest A, both redeemed).
+
+--- 10. evidence hygiene: executed Appendix D scan over the SEVEN wave-3 files ---
+
+Files in scope:
+  case-02-host-agent-restart.md   case-02-host-agent-restart.txt
+  case-03-guest-restart.md        case-03-guest-restart.txt
+  case-01-host-reboot.md          case-01-host-reboot.txt
+  wave-03-final-state.txt
+
+Patterns: the nine canonical Appendix D patterns already stored in this directory as
+secret-scan-patterns.txt (referenced by file, never re-printed here — printing them is what caused
+defect D2 in wave 2, and pattern 7 is itself a real recovery-key fragment), plus a tenth check:
+the CORRECTED wrapped-PEM base64 detector ^[A-Za-z0-9+/]{64,}={0,2}$ (p9 finding S1: the original
+{65,} boundary can never match PEM, which wraps at exactly 64 columns).
+
+Invocation note: this grep rejects a bare -e; patterns beginning with '-' must be passed as
+--regexp="$pat". Patterns 1 and 2 silently failed to run until that was fixed — the same defect
+class as wave-2 D1/D2, caught here by the control rather than by luck.
+
+Positive control: a throwaway EC private key generated locally with
+`openssl ecparam -name prime256v1 -genkey -noout`, plus one line shaped for each remaining pattern
+(a certificate header, a quoted nonce field, a bare nonce=<hex>, a Bearer token, a recovery-key-shaped
+8x8 string, pattern 7's literal taken from the pattern file itself without ever being typed or
+printed, and an exchange_key_pem MII… body). The control lived only at /tmp/p10w3/positive-control.txt
+on the operator workstation, never in this repository, and was shredded afterwards.
+
+CONTROL RESULT — every detector fires on planted material:
+  pattern #1 ... 1 hit(s) in control
+  pattern #2 ... 1 hit(s) in control
+  pattern #3 ... 1 hit(s) in control
+  pattern #4 ... 1 hit(s) in control
+  pattern #5 ... 1 hit(s) in control
+  pattern #6 ... 1 hit(s) in control
+  pattern #7 ... 1 hit(s) in control
+  pattern #8 ... 1 hit(s) in control
+  pattern #9 ... 1 hit(s) in control
+  corrected base64 ... 2 hit(s) in control
+
+SCAN RESULT — the seven wave-3 evidence files:
+  pattern #1 ... 0 hit(s)
+  pattern #2 ... 0 hit(s)
+  pattern #3 ... 0 hit(s)
+  pattern #4 ... 0 hit(s)
+  pattern #5 ... 0 hit(s)
+  pattern #6 ... 0 hit(s)
+  pattern #7 ... 0 hit(s)
+  pattern #8 ... 0 hit(s)
+  pattern #9 ... 0 hit(s)
+  corrected base64 ... 0 hit(s)
+
+ATTRIBUTION — every 64-hex token in the seven files (a clean pattern scan is not sufficient, p9 finding S1):
+  2c5332e78de18ae19351b263d2fef0c779b7e6dff37157c8c348ef53c943a57b
+  4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45
+  7cedc92f3e349063cfd060bbe8be4da00dcab4b12b164d765ca926b05147ab93
+  9eb18b1a93682960e9e190cd818284ad4bcaf1740be9a435630a3b1dc60acee7
+  c4e62072d85a99bfe54033484b8c6e27bfcaa124bbce79df04457150de6482d9
+  c5bdea901c527dc1686fd18fd195bc5ffd868d589ba2660512aff1f7571f6248
+  e9e4847620ee28beef2c219846c94a1019c4baa6a8f49573994ebeb733113b37
+
+ATTRIBUTION — every 32-hex token (nonce IDs are public identifiers, not secrets):
+  036c59df90d7dda40f0de6a11f480dc1
+  4817655c230e15d303ff3b4bd73efec6
+  4b6beea07cf603584d0e4fe27c2cc943
+  674225fbecda5f0265e44b7c3b261993
+  740b5127daae46b3b67242906c68289a
+  87ae86f3c51a8760c1646e43def904bb
+  8dde1134a421c54013d778fbddc09390
+  c7ac8e6cdc8c9febbf47823fdc2127ba
+  fa4b3f1bbcadfa687740a7997bee4c31
+
+Attribution of the seven 64-hex tokens, in order:
+  2c5332e7… sha256 of the guest agent config /run/spike-p9/agent.conf (case 3, restart arm)
+  4ed87f92… incus-spiffe-broker binary sha256 (public, unchanged since P9 post-fix)
+  7cedc92f… broker TLS leaf SHA-256 fingerprint (public pin, unchanged since P9)
+  9eb18b1a… guest image fingerprint, part of the incus:image selector (public)
+  c4e62072… , c5bdea90… , e9e48476… bootstrap-payload sha256 digests printed by the harness
+              (case 2 guest-B probes and the case-3 guest-A run). A digest of the payload, not the
+              payload: one-way, and the same field P8/P9/P10 have recorded throughout.
+The nine 32-hex tokens are five wave-3 nonce IDs (all dead), three x509pop:serialnumber: selector
+values, and one systemd boot ID (740b5127…, from the broker journal's "-- Boot … --" separator).
+No token is a secret; no nonce value, private key, or recovery key appears in any of the seven files.
+
+SCAN CLEAN. Both the control and the invocation were verified before trusting the result.
+
+RE-SCAN after this section was appended: 0 hits across all ten detectors on all seven files
+(the wave-2 D2 self-match defect did not recur, because the patterns are referenced by file
+rather than re-printed).
+
+================================================================================
+### ADDENDUM — state after the additive corrective host reboot (case 1 rerun)
+### The checklist above is the 19:06:57Z wave close and is left unchanged.
+### Transcript: case-01-host-reboot-reattest.txt
+2026-08-17T19:36:02Z
+
+--- 1. host: five non-secret safety fields (recovery-key fields never selected) ---
+{"tpm_status":"ok","system_state_is_trusted":true,"secure_boot_enabled":true,"encrypted_volumes":[{"volume":"root","state":"unlocked (TPM)"},{"volume":"swap","state":"unlocked (TPM)"}]}
+
+--- 2. TPM: no tpm2_* command was executed in the corrective rerun either; no persistent handle
+---    or NV index created, evicted or written; DevID triplet checksums re-verified identical. ---
+
+--- 3. attested nodes (host node now carries a FRESH tpm_devid attestation) ---
+Found 2 attested agents:
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Attestation type  : tpm_devid
+Expiration time   : 2026-08-17 20:31:04 +0000 UTC
+Serial number     : 132093680856743140626168429589948833700
+Can re-attest     : true
+Agent version     : 1.15.2
+
+SPIFFE ID         : spiffe://spike.incus.internal/spire/agent/x509pop/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Attestation type  : x509pop
+Expiration time   : 2026-08-17 20:33:34 +0000 UTC
+Serial number     : 307601102364009288208173643239772829818
+Can re-attest     : true
+Agent version     : 1.15.2
+
+--- 4. registration entries ---
+Found 2 entries
+Entry ID                : 718f0f2e-1430-4ea8-9179-ae7223724f6b
+SPIFFE ID               : spiffe://spike.incus.internal/incus-broker
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 3600
+JWT-SVID TTL            : default
+Selector                : unix:uid:0
+
+Entry ID                : 6261b897-9852-4740-a80f-2dbd05979597
+SPIFFE ID               : spiffe://spike.incus.internal/spire-exchange/incus/a955ca30-a0dc-4087-a369-37d53d389c5a
+Parent ID               : spiffe://spike.incus.internal/spire/agent/tpm_devid/fee6de975fb82fdbd3c7b7ea7e0b752412469fd0
+Revision                : 0
+X509-SVID TTL           : 120
+JWT-SVID TTL            : default
+Selector                : incus:uuid:a955ca30-a0dc-4087-a369-37d53d389c5a
+
+--- 5. user.spiffe-bootstrap unset on EVERY instance in both projects (bytes; 1 = unset) ---
+default/spike-broker: 1
+default/spike-p3-stage: 1
+default/spike-probe: 1
+default/spire-agent: 1
+default/spire-server: 1
+spike-spiffe/spike-authz-probe: 1
+spike-spiffe/spike-guest-a: 1
+spike-spiffe/spike-guest-b: 1
+
+--- 6. no snapshots, no clones, both guests RUNNING ---
+snapshots on spike-guest-a: 0
+snapshots on spike-guest-b: 0
+spike-authz-probe,RUNNING,CONTAINER (APP)
+spike-broker,RUNNING,CONTAINER
+spike-guest-a,RUNNING,VIRTUAL-MACHINE
+spike-guest-b,RUNNING,VIRTUAL-MACHINE
+spike-p3-stage,RUNNING,CONTAINER (APP)
+spike-probe,RUNNING,CONTAINER (APP)
+spire-agent,RUNNING,CONTAINER (APP)
+spire-server,RUNNING,CONTAINER (APP)
+
+--- 7. guest A: agent, Workload API ---
+787 spire-agent run -config /run/spike-p9/agent.conf
+Agent is healthy.
+srwxrwxrwx 1 root root 0 Aug 17 19:33 /tmp/spire-agent/public/api.sock
+
+--- 8. broker: active, digest, listener, sockets ---
+active
+4ed87f92ca113334c2e2e60127ae00131a47273ac476dd1d2f05b8f2e463fa45  /usr/local/bin/incus-spiffe-broker
+LISTEN 0      4096               *:8443            *:*    users:(("incus-spiffe-br",pid=172,fd=6)) 
+/hostagent/broker-run/broker.sock inode=404
+/hostagent/wlapi-relay.sock inode=769
+/hostagent/run/api.sock inode=640
+
+--- 9. temporary settings and backups from the rerun: all restored/removed ---
+spire-agent boot.autostart=[] (empty = UNSET, the original value)
+no p10-c1r-* backup artifacts on the volume
+
+--- 10. net change versus the 19:06:57Z close ---
+  host node SVID serial 338245892702369297504124352385913862932 (wave close)
+    -> rotated normally to 320634660006268655429054830322439136727
+    -> replaced by FRESH tpm_devid attestation: 132093680856743140626168429589948833700
+  guest A node SVID serial 255755278229189093346956051979456409234 -> 307601102364009288208173643239772829818
+  /spike/conf/agent-trust-bundle.pem refreshed 609c0bc7…ee94 -> d5514eec…d520 (stale after a
+    mid-spike SPIRE CA rotation; refreshed from spire-server bundle show — see the rerun transcript)
+  /spike/agent-data/{agent-data.json,keys.json} rewritten by the agent during fresh attestation
+  Everything else: identical.
